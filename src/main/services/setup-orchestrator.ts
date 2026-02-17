@@ -171,6 +171,51 @@ export class SetupOrchestrator extends EventEmitter {
     ]);
   }
 
+  public async completeOnboardingFromUi(): Promise<SetupState> {
+    await this.saveState({
+      stage: "starting_gateway",
+      requiresReboot: false,
+      resumeOnLogin: false,
+      message: "Finalizing onboarding and verifying gateway."
+    });
+
+    const startResult = await this.environmentService.gatewayStartStreaming((line, stream) => {
+      this.emitProgress("starting_gateway", line, stream === "stderr" ? "warning" : "info", stream);
+    });
+
+    if (!startResult.ok) {
+      return this.saveState(
+        {
+          stage: "failed",
+          requiresReboot: false,
+          resumeOnLogin: false,
+          message: "Gateway start failed after onboarding. Retry Start Gateway and finish again."
+        },
+        "error"
+      );
+    }
+
+    const status = await this.environmentService.getEnvironmentStatus();
+    if (!status.gatewayRunning) {
+      return this.saveState(
+        {
+          stage: "ready_for_manual_step",
+          requiresReboot: false,
+          resumeOnLogin: false,
+          message: "Onboarding completed but gateway is not reporting healthy yet. Check Gateway Status and retry."
+        },
+        "warning"
+      );
+    }
+
+    return this.saveState({
+      stage: "completed",
+      requiresReboot: false,
+      resumeOnLogin: false,
+      message: "Setup complete. OpenClaw gateway is running."
+    });
+  }
+
   private async continueOpenClawSetup(): Promise<SetupState> {
     const status = await this.environmentService.getEnvironmentStatus();
 
@@ -228,35 +273,10 @@ export class SetupOrchestrator extends EventEmitter {
     }
 
     await this.saveState({
-      stage: "running_onboarding",
-      requiresReboot: false,
-      resumeOnLogin: false,
-      message: "Running OpenClaw onboarding..."
-    });
-
-    const onboardingResult = await this.environmentService.runOnboardingStreaming((line, stream) => {
-      this.emitProgress("running_onboarding", line, stream === "stderr" ? "warning" : "info", stream);
-    });
-
-    if (!onboardingResult.ok) {
-      return this.saveState(
-        {
-          stage: "failed",
-          requiresReboot: false,
-          resumeOnLogin: false,
-          message: "OpenClaw onboarding failed. Retry setup once network and credentials are ready."
-        },
-        "error"
-      );
-    }
-
-    this.emitProgress("running_onboarding", "Onboarding command completed.");
-
-    await this.saveState({
       stage: "starting_gateway",
       requiresReboot: false,
       resumeOnLogin: false,
-      message: "Starting OpenClaw gateway..."
+      message: "Starting OpenClaw gateway for UI onboarding..."
     });
 
     const startResult = await this.environmentService.gatewayStartStreaming((line, stream) => {
@@ -269,7 +289,7 @@ export class SetupOrchestrator extends EventEmitter {
           stage: "failed",
           requiresReboot: false,
           resumeOnLogin: false,
-          message: "Gateway start failed. Retry setup or use the Start Gateway action manually."
+          message: "Gateway start failed. Fix gateway health first, then retry guided setup."
         },
         "error"
       );
@@ -282,17 +302,17 @@ export class SetupOrchestrator extends EventEmitter {
           stage: "ready_for_manual_step",
           requiresReboot: false,
           resumeOnLogin: false,
-          message: "Gateway did not report running yet. Use Gateway Status/Start actions to finalize."
+          message: "Gateway did not report running yet. Use Gateway Status/Start, then open in-app onboarding wizard."
         },
         "warning"
       );
     }
 
     return this.saveState({
-      stage: "completed",
+      stage: "ready_for_manual_step",
       requiresReboot: false,
       resumeOnLogin: false,
-      message: "Setup complete. OpenClaw gateway is running."
+      message: "Gateway is running. Complete onboarding in the in-app wizard."
     });
   }
 

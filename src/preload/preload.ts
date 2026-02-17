@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppConfig, RendererApi, SetupProgressEvent } from "../shared/types";
+import type {
+  AppConfig,
+  RendererApi,
+  SetupProgressEvent,
+  WizardAnswer,
+  WizardStartParams
+} from "../shared/types";
 
 const api: RendererApi = {
   getEnvironmentStatus: () => ipcRenderer.invoke("env:get-status"),
@@ -25,7 +31,12 @@ const api: RendererApi = {
     return () => {
       ipcRenderer.removeListener("setup:progress", handler);
     };
-  }
+  },
+  wizardStart: (params: WizardStartParams = {}) => ipcRenderer.invoke("wizard:start", params),
+  wizardNext: (sessionId: string, answer?: WizardAnswer) => ipcRenderer.invoke("wizard:next", sessionId, answer),
+  wizardStatus: (sessionId: string) => ipcRenderer.invoke("wizard:status", sessionId),
+  wizardCancel: (sessionId: string) => ipcRenderer.invoke("wizard:cancel", sessionId),
+  completeOnboardingFromUi: () => ipcRenderer.invoke("setup:complete-onboarding")
 };
 
 contextBridge.exposeInMainWorld("openclaw", api);

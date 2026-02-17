@@ -8,15 +8,23 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
 
 - Detect Windows + WSL + distro + `systemd` + OpenClaw CLI + gateway status.
 - Run setup actions from UI:
-  - One-click guided setup (`Run Guided Setup`) that chains WSL install, OpenClaw install, onboarding, and gateway start
+  - One-click guided setup (`Run Guided Setup`) that chains WSL install, OpenClaw install, and gateway readiness for onboarding
   - Live setup progress stream (stage + command output) from main process to renderer
+  - In-app onboarding wizard rendered from OpenClaw Gateway RPC (`wizard.start`, `wizard.next`, `wizard.status`, `wizard.cancel`)
+  - Channel-specific onboarding copy templates for WhatsApp and Telegram steps (pairing/token/workspace guidance)
+  - Model-specific onboarding templates (provider/model/credential guidance)
+  - WhatsApp QR-focused step UI with large scan panel and explicit scan confirmation
+  - Auto-progress WhatsApp pairing checklist (`Open WhatsApp -> Linked Devices -> Scan -> Wait for Connected`)
+  - Auto-progress Telegram bot checklist (`BotFather -> token -> destination -> validate`)
+  - Auto-progress model checklist (`Provider -> Model -> Credential`) with current selection summary
   - Automatic handoff from setup to embedded in-app Control UI when gateway is healthy
   - Install WSL with UAC elevation (`Start-Process wsl.exe -Verb RunAs`)
   - Persist setup state and resume after reboot
   - Install OpenClaw in WSL (`curl -fsSL https://openclaw.ai/install.sh | bash`)
-  - Run onboarding (`openclaw onboard --install-daemon`)
+  - Optional CLI onboarding fallback (`openclaw onboard --install-daemon`)
   - Start/stop/status gateway
 - Manage user-facing config from forms and persist it in app storage.
+  - Includes profile/workspace + model provider + model name fields
 
 ## Project structure
 
@@ -55,6 +63,7 @@ npm run dist
 - Setup commands are executed through `wsl.exe bash -lc ...`.
 - WSL install is requested via elevated Windows command and can require reboot.
 - If reboot is required, setup state is saved and auto-resume is registered for next login on packaged builds.
+- TUI onboarding is replaced by UI onboarding wizard inside the app, backed by Gateway wizard RPC calls.
 - App can trigger restart directly (`shutdown.exe /r /t 5`) from the setup UI.
 - Control UI is shown inside the app using an embedded webview pointed at local `http://127.0.0.1:18789/`.
 - If gateway is unavailable, app falls back to setup workspace with retry actions (`Start Gateway + Retry`).

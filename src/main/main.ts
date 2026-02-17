@@ -105,6 +105,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle("setup:start-wsl", () => setupOrchestrator.startWslSetup());
   ipcMain.handle("setup:resume", () => setupOrchestrator.resumeAfterReboot());
   ipcMain.handle("setup:restart", () => setupOrchestrator.restartForSetup());
+  ipcMain.handle("setup:complete-onboarding", () => setupOrchestrator.completeOnboardingFromUi());
+
+  ipcMain.handle("wizard:start", (_event, params) => environmentService.wizardStart(params));
+  ipcMain.handle("wizard:next", (_event, sessionId, answer) => environmentService.wizardNext(sessionId, answer));
+  ipcMain.handle("wizard:status", (_event, sessionId) => environmentService.wizardStatus(sessionId));
+  ipcMain.handle("wizard:cancel", (_event, sessionId) => environmentService.wizardCancel(sessionId));
 }
 
 async function maybeAutoStartGateway(): Promise<void> {

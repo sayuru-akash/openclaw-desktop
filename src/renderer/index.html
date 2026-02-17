@@ -85,8 +85,113 @@
 
         <section class="panel">
           <div class="panel-header">
+            <h2>In-App Onboarding Wizard</h2>
+            <button id="wizardStartButton" class="button primary">Start Wizard</button>
+          </div>
+
+          <p id="wizardSessionLabel" class="panel-caption">No active wizard session.</p>
+
+          <div id="wizardStepCard" class="wizard-step-card hidden">
+            <h3 id="wizardStepTitle" class="wizard-step-title">Step</h3>
+            <p id="wizardStepMeta" class="wizard-step-meta">Type: note</p>
+            <p id="wizardStepMessage" class="wizard-step-message">Follow the instructions to continue.</p>
+            <p id="wizardGuideHint" class="wizard-guide-hint hidden"></p>
+            <div id="wizardQrPanel" class="wizard-qr-panel hidden">
+              <p class="wizard-qr-title">Scan with WhatsApp Linked Devices</p>
+              <div class="wizard-qr-frame">
+                <img id="wizardQrImage" class="wizard-qr-image hidden" alt="WhatsApp pairing QR" />
+                <pre id="wizardQrAscii" class="wizard-qr-ascii hidden"></pre>
+                <p id="wizardQrFallback" class="wizard-qr-fallback">
+                  QR code is not available in this step payload yet. Follow the wizard instructions and refresh if needed.
+                </p>
+              </div>
+              <div class="wizard-qr-actions">
+                <button id="wizardQrScannedButton" class="button">I Have Scanned the QR</button>
+                <p id="wizardQrScanStatus" class="wizard-qr-status">Status: waiting for scan confirmation.</p>
+              </div>
+              <div id="wizardQrChecklist" class="wizard-qr-checklist hidden">
+                <p class="wizard-qr-checklist-title">WhatsApp Pairing Checklist</p>
+                <ul class="wizard-qr-checklist-list">
+                  <li id="wizardChecklistOpen" class="wizard-check-item" data-step-index="1">
+                    <span class="wizard-check-icon">1</span>
+                    <span>Open WhatsApp on your phone</span>
+                  </li>
+                  <li id="wizardChecklistLinked" class="wizard-check-item" data-step-index="2">
+                    <span class="wizard-check-icon">2</span>
+                    <span>Go to Linked Devices</span>
+                  </li>
+                  <li id="wizardChecklistScan" class="wizard-check-item" data-step-index="3">
+                    <span class="wizard-check-icon">3</span>
+                    <span>Scan this QR code</span>
+                  </li>
+                  <li id="wizardChecklistConnected" class="wizard-check-item" data-step-index="4">
+                    <span class="wizard-check-icon">4</span>
+                    <span>Wait for connection confirmation</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div id="wizardTelegramPanel" class="wizard-telegram-panel hidden">
+              <p class="wizard-telegram-title">Telegram Bot Setup Checklist</p>
+              <ul class="wizard-telegram-checklist-list">
+                <li id="wizardTelegramBotfather" class="wizard-check-item" data-step-index="1">
+                  <span class="wizard-check-icon">1</span>
+                  <span>Create bot with @BotFather (`/newbot`)</span>
+                </li>
+                <li id="wizardTelegramToken" class="wizard-check-item" data-step-index="2">
+                  <span class="wizard-check-icon">2</span>
+                  <span>Paste bot token in this app</span>
+                </li>
+                <li id="wizardTelegramChat" class="wizard-check-item" data-step-index="3">
+                  <span class="wizard-check-icon">3</span>
+                  <span>Set chat/channel destination</span>
+                </li>
+                <li id="wizardTelegramValidate" class="wizard-check-item" data-step-index="4">
+                  <span class="wizard-check-icon">4</span>
+                  <span>Validate connection with test message</span>
+                </li>
+              </ul>
+              <p id="wizardTelegramStatus" class="wizard-telegram-status">Status: waiting for Telegram setup steps.</p>
+            </div>
+            <div id="wizardModelPanel" class="wizard-model-panel hidden">
+              <p class="wizard-model-title">Model Setup Checklist</p>
+              <ul class="wizard-model-checklist-list">
+                <li id="wizardModelProvider" class="wizard-check-item" data-step-index="1">
+                  <span class="wizard-check-icon">1</span>
+                  <span>Choose provider</span>
+                </li>
+                <li id="wizardModelName" class="wizard-check-item" data-step-index="2">
+                  <span class="wizard-check-icon">2</span>
+                  <span>Choose model</span>
+                </li>
+                <li id="wizardModelCredential" class="wizard-check-item" data-step-index="3">
+                  <span class="wizard-check-icon">3</span>
+                  <span>Save API credential</span>
+                </li>
+              </ul>
+              <div class="wizard-model-summary">
+                <p>Provider: <span id="wizardModelProviderValue">Not selected</span></p>
+                <p>Model: <span id="wizardModelNameValue">Not selected</span></p>
+              </div>
+              <p id="wizardModelStatus" class="wizard-model-status">Status: waiting for provider/model setup steps.</p>
+            </div>
+            <div id="wizardInputContainer" class="wizard-input-container"></div>
+            <p id="wizardValidationMessage" class="wizard-validation-message hidden"></p>
+            <div class="actions wizard-actions">
+              <button id="wizardSubmitButton" class="button primary">Submit Step</button>
+              <button id="wizardCancelButton" class="button">Cancel Wizard</button>
+              <button id="wizardRefreshButton" class="button">Refresh Status</button>
+              <button id="wizardCompleteButton" class="button">Mark Onboarding Complete</button>
+            </div>
+          </div>
+
+          <pre id="wizardRawState" class="wizard-raw">Wizard state will appear here.</pre>
+
+          <div class="divider"></div>
+
+          <div class="panel-header">
             <h2>User-Friendly Config</h2>
-            <button id="saveConfigButton" class="button primary">Save</button>
+            <button id="saveConfigButton" class="button">Save</button>
           </div>
 
           <form id="configForm" class="form" autocomplete="off">
@@ -98,6 +203,16 @@
             <label>
               Workspace Path
               <input id="workspacePath" type="text" placeholder="C:\\Users\\You\\OpenClaw" />
+            </label>
+
+            <label>
+              Model Provider
+              <input id="modelProvider" type="text" placeholder="OpenAI" />
+            </label>
+
+            <label>
+              Model Name
+              <input id="modelName" type="text" placeholder="gpt-4o-mini" />
             </label>
 
             <label class="toggle-row">

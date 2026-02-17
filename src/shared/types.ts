@@ -33,6 +33,57 @@ export interface SetupProgressEvent {
   message: string;
 }
 
+export type WizardRunStatus = "running" | "done" | "cancelled" | "error";
+export type WizardStepType = "note" | "select" | "text" | "confirm" | "multiselect" | "progress" | "action";
+
+export interface WizardStepOption {
+  value: unknown;
+  label: string;
+  hint?: string;
+}
+
+export interface WizardStep {
+  id: string;
+  type: WizardStepType;
+  title?: string;
+  message?: string;
+  options?: WizardStepOption[];
+  initialValue?: unknown;
+  placeholder?: string;
+  sensitive?: boolean;
+  executor?: "gateway" | "client";
+}
+
+export interface WizardStartParams {
+  mode?: "local" | "remote";
+  workspace?: string;
+}
+
+export interface WizardAnswer {
+  stepId: string;
+  value?: unknown;
+}
+
+export interface WizardStartResult {
+  sessionId: string;
+  done: boolean;
+  step?: WizardStep;
+  status?: WizardRunStatus;
+  error?: string;
+}
+
+export interface WizardNextResult {
+  done: boolean;
+  step?: WizardStep;
+  status?: WizardRunStatus;
+  error?: string;
+}
+
+export interface WizardStatusResult {
+  status: WizardRunStatus;
+  error?: string;
+}
+
 export interface EnvironmentStatus {
   checkedAt: string;
   platform: NodeJS.Platform;
@@ -48,6 +99,8 @@ export interface EnvironmentStatus {
 export interface AppConfig {
   profileName: string;
   workspacePath: string;
+  modelProvider: string;
+  modelName: string;
   autoStartGateway: boolean;
   updatedAt: string;
 }
@@ -68,4 +121,9 @@ export interface RendererApi {
   resumeSetup: () => Promise<SetupState>;
   restartForSetup: () => Promise<CommandResult>;
   onSetupProgress: (listener: (event: SetupProgressEvent) => void) => () => void;
+  wizardStart: (params?: WizardStartParams) => Promise<WizardStartResult>;
+  wizardNext: (sessionId: string, answer?: WizardAnswer) => Promise<WizardNextResult>;
+  wizardStatus: (sessionId: string) => Promise<WizardStatusResult>;
+  wizardCancel: (sessionId: string) => Promise<{ status: WizardRunStatus; error?: string }>;
+  completeOnboardingFromUi: () => Promise<SetupState>;
 }

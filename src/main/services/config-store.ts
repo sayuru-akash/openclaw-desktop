@@ -5,6 +5,8 @@ import type { AppConfig } from "../../shared/types";
 const defaultConfig: AppConfig = {
   profileName: "Default",
   workspacePath: "",
+  modelProvider: "",
+  modelName: "",
   autoStartGateway: true,
   updatedAt: new Date(0).toISOString()
 };
@@ -23,6 +25,8 @@ export class ConfigStore {
       return {
         profileName: parsed.profileName ?? defaultConfig.profileName,
         workspacePath: parsed.workspacePath ?? defaultConfig.workspacePath,
+        modelProvider: parsed.modelProvider ?? defaultConfig.modelProvider,
+        modelName: parsed.modelName ?? defaultConfig.modelName,
         autoStartGateway: parsed.autoStartGateway ?? defaultConfig.autoStartGateway,
         updatedAt: parsed.updatedAt ?? defaultConfig.updatedAt
       };
