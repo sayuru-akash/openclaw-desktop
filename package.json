@@ -1,0 +1,44 @@
+{
+  "name": "openclaw-desktop",
+  "version": "0.1.0",
+  "description": "Windows-first Electron wrapper for OpenClaw with guided onboarding.",
+  "main": "dist/main/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:assets": "node scripts/copy-renderer.mjs",
+    "build": "npm run clean && npm run build:main && npm run build:assets",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "ai.openclaw.desktop",
+    "productName": "OpenClaw Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.8",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.8.2"
+  }
+}

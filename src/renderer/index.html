@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <header class="hero">
+        <p class="eyebrow">OpenClaw Desktop</p>
+        <h1>One-click setup for Windows users</h1>
+        <p class="subhead">
+          This app manages WSL, OpenClaw onboarding, and gateway lifecycle so users do not need terminal commands.
+        </p>
+        <div class="workspace-switcher">
+          <button id="showSetupButton" class="button">Setup Assistant</button>
+          <button id="showControlButton" class="button primary">OpenClaw Control</button>
+        </div>
+      </header>
+
+      <main id="setupWorkspace" class="grid">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Setup Assistant</h2>
+            <span class="panel-caption">Guided install with reboot resume</span>
+          </div>
+
+          <div class="status-grid">
+            <article class="status-card">
+              <h3>Platform</h3>
+              <p id="platformValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>WSL</h3>
+              <p id="wslValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Distro</h3>
+              <p id="distroValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>systemd</h3>
+              <p id="systemdValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>OpenClaw CLI</h3>
+              <p id="openClawValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Gateway</h3>
+              <p id="gatewayValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Setup Stage</h3>
+              <p id="setupStageValue">Pending</p>
+            </article>
+          </div>
+
+          <div class="actions">
+            <button id="guidedSetupButton" class="button primary">Run Guided Setup</button>
+            <button id="installWslButton" class="button">Install WSL (Elevated)</button>
+            <button id="installOpenClawButton" class="button">Install OpenClaw in WSL</button>
+          </div>
+
+          <div class="actions">
+            <button id="runOnboardingButton" class="button">Run `openclaw onboard`</button>
+            <button id="gatewayStatusButton" class="button">Gateway Status</button>
+            <button id="gatewayStartButton" class="button">Start Gateway</button>
+            <button id="gatewayStopButton" class="button">Stop Gateway</button>
+          </div>
+
+          <div class="actions">
+            <button id="resumeSetupButton" class="button">Continue Setup</button>
+            <button id="restartNowButton" class="button">Restart Windows Now</button>
+            <button id="checkEnvButton" class="button">Run Checks</button>
+          </div>
+
+          <div class="notes">
+            <h3>Environment Notes</h3>
+            <ul id="notesList"></ul>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>User-Friendly Config</h2>
+            <button id="saveConfigButton" class="button primary">Save</button>
+          </div>
+
+          <form id="configForm" class="form" autocomplete="off">
+            <label>
+              Profile Name
+              <input id="profileName" type="text" placeholder="Personal" />
+            </label>
+
+            <label>
+              Workspace Path
+              <input id="workspacePath" type="text" placeholder="C:\\Users\\You\\OpenClaw" />
+            </label>
+
+            <label class="toggle-row">
+              <input id="autoStartGateway" type="checkbox" />
+              Auto-start gateway on app launch
+            </label>
+          </form>
+
+          <div class="notes">
+            <h3>Activity Log</h3>
+            <pre id="logOutput" class="log">App ready.</pre>
+          </div>
+        </section>
+      </main>
+
+      <main id="controlWorkspace" class="control-workspace hidden">
+        <section class="panel control-panel">
+          <div class="panel-header">
+            <h2>OpenClaw Control</h2>
+            <span class="panel-caption">Embedded inside this app</span>
+          </div>
+
+          <div class="actions control-actions">
+            <button id="reloadControlButton" class="button">Reload Control UI</button>
+            <button id="retryGatewayButton" class="button">Start Gateway + Retry</button>
+            <button id="backToSetupButton" class="button">Back to Setup</button>
+          </div>
+
+          <div class="control-status-wrap">
+            <p id="controlStatus" class="control-status">Waiting for gateway readiness check...</p>
+            <p id="controlFallback" class="control-fallback hidden">
+              Gateway is not ready yet. Use "Start Gateway + Retry" or switch back to Setup Assistant.
+            </p>
+          </div>
+
+          <webview
+            id="controlWebview"
+            class="control-webview"
+            src="about:blank"
+            allowpopups="false"
+            partition="persist:openclaw-control"
+          ></webview>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
