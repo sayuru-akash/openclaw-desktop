@@ -10,21 +10,19 @@
     <div class="layout">
       <header class="hero">
         <p class="eyebrow">OpenClaw Desktop</p>
-        <h1>One-click setup for Windows users</h1>
-        <p class="subhead">
-          This app manages WSL, OpenClaw onboarding, and gateway lifecycle so users do not need terminal commands.
-        </p>
+        <h1>Setup. Connect. Run.</h1>
+        <p class="subhead">No terminal. Just click through.</p>
         <div class="workspace-switcher">
-          <button id="showSetupButton" class="button">Setup Assistant</button>
-          <button id="showControlButton" class="button primary">OpenClaw Control</button>
+          <button id="showSetupButton" class="button">Setup</button>
+          <button id="showControlButton" class="button primary">Control</button>
         </div>
       </header>
 
       <main id="setupWorkspace" class="grid">
         <section class="panel">
           <div class="panel-header">
-            <h2>Setup Assistant</h2>
-            <span class="panel-caption">Guided install with reboot resume</span>
+            <h2>Setup</h2>
+            <span class="panel-caption">Install + start</span>
           </div>
 
           <div class="status-grid">
@@ -56,40 +54,44 @@
               <h3>Setup Stage</h3>
               <p id="setupStageValue">Pending</p>
             </article>
+            <article class="status-card">
+              <h3>Always-on Gateway</h3>
+              <p id="alwaysOnGatewayValue">Pending</p>
+            </article>
           </div>
 
           <div class="actions">
-            <button id="guidedSetupButton" class="button primary">Run Guided Setup</button>
-            <button id="installWslButton" class="button">Install WSL (Elevated)</button>
-            <button id="installOpenClawButton" class="button">Install OpenClaw in WSL</button>
+            <button id="guidedSetupButton" class="button primary">Quick Setup</button>
+            <button id="installWslButton" class="button">Install WSL</button>
+            <button id="installOpenClawButton" class="button">Install OpenClaw</button>
           </div>
 
           <div class="actions">
-            <button id="runOnboardingButton" class="button">Run `openclaw onboard`</button>
-            <button id="gatewayStatusButton" class="button">Gateway Status</button>
-            <button id="gatewayStartButton" class="button">Start Gateway</button>
-            <button id="gatewayStopButton" class="button">Stop Gateway</button>
+            <button id="runOnboardingButton" class="button">CLI Onboard</button>
+            <button id="gatewayStatusButton" class="button">Status</button>
+            <button id="gatewayStartButton" class="button">Start</button>
+            <button id="gatewayStopButton" class="button">Stop</button>
           </div>
 
           <div class="actions">
-            <button id="resumeSetupButton" class="button">Continue Setup</button>
-            <button id="restartNowButton" class="button">Restart Windows Now</button>
-            <button id="checkEnvButton" class="button">Run Checks</button>
+            <button id="resumeSetupButton" class="button">Continue</button>
+            <button id="restartNowButton" class="button">Restart</button>
+            <button id="checkEnvButton" class="button">Check</button>
           </div>
 
           <div class="notes">
-            <h3>Environment Notes</h3>
+            <h3>Notes</h3>
             <ul id="notesList"></ul>
           </div>
         </section>
 
         <section class="panel">
           <div class="panel-header">
-            <h2>In-App Onboarding Wizard</h2>
-            <button id="wizardStartButton" class="button primary">Start Wizard</button>
+            <h2>Onboarding</h2>
+            <button id="wizardStartButton" class="button primary">Start</button>
           </div>
 
-          <p id="wizardSessionLabel" class="panel-caption">No active wizard session.</p>
+          <p id="wizardSessionLabel" class="panel-caption">No session.</p>
 
           <div id="wizardStepCard" class="wizard-step-card hidden">
             <h3 id="wizardStepTitle" class="wizard-step-title">Step</h3>
@@ -97,7 +99,7 @@
             <p id="wizardStepMessage" class="wizard-step-message">Follow the instructions to continue.</p>
             <p id="wizardGuideHint" class="wizard-guide-hint hidden"></p>
             <div id="wizardQrPanel" class="wizard-qr-panel hidden">
-              <p class="wizard-qr-title">Scan with WhatsApp Linked Devices</p>
+              <p class="wizard-qr-title">Scan QR</p>
               <div class="wizard-qr-frame">
                 <img id="wizardQrImage" class="wizard-qr-image hidden" alt="WhatsApp pairing QR" />
                 <pre id="wizardQrAscii" class="wizard-qr-ascii hidden"></pre>
@@ -110,63 +112,63 @@
                 <p id="wizardQrScanStatus" class="wizard-qr-status">Status: waiting for scan confirmation.</p>
               </div>
               <div id="wizardQrChecklist" class="wizard-qr-checklist hidden">
-                <p class="wizard-qr-checklist-title">WhatsApp Pairing Checklist</p>
+                <p class="wizard-qr-checklist-title">WhatsApp</p>
                 <ul class="wizard-qr-checklist-list">
                   <li id="wizardChecklistOpen" class="wizard-check-item" data-step-index="1">
                     <span class="wizard-check-icon">1</span>
-                    <span>Open WhatsApp on your phone</span>
+                    <span>Open WhatsApp</span>
                   </li>
                   <li id="wizardChecklistLinked" class="wizard-check-item" data-step-index="2">
                     <span class="wizard-check-icon">2</span>
-                    <span>Go to Linked Devices</span>
+                    <span>Linked Devices</span>
                   </li>
                   <li id="wizardChecklistScan" class="wizard-check-item" data-step-index="3">
                     <span class="wizard-check-icon">3</span>
-                    <span>Scan this QR code</span>
+                    <span>Scan QR</span>
                   </li>
                   <li id="wizardChecklistConnected" class="wizard-check-item" data-step-index="4">
                     <span class="wizard-check-icon">4</span>
-                    <span>Wait for connection confirmation</span>
+                    <span>Wait for connect</span>
                   </li>
                 </ul>
               </div>
             </div>
             <div id="wizardTelegramPanel" class="wizard-telegram-panel hidden">
-              <p class="wizard-telegram-title">Telegram Bot Setup Checklist</p>
+              <p class="wizard-telegram-title">Telegram</p>
               <ul class="wizard-telegram-checklist-list">
                 <li id="wizardTelegramBotfather" class="wizard-check-item" data-step-index="1">
                   <span class="wizard-check-icon">1</span>
-                  <span>Create bot with @BotFather (`/newbot`)</span>
+                  <span>Create bot (`/newbot`)</span>
                 </li>
                 <li id="wizardTelegramToken" class="wizard-check-item" data-step-index="2">
                   <span class="wizard-check-icon">2</span>
-                  <span>Paste bot token in this app</span>
+                  <span>Paste token</span>
                 </li>
                 <li id="wizardTelegramChat" class="wizard-check-item" data-step-index="3">
                   <span class="wizard-check-icon">3</span>
-                  <span>Set chat/channel destination</span>
+                  <span>Set chat/channel</span>
                 </li>
                 <li id="wizardTelegramValidate" class="wizard-check-item" data-step-index="4">
                   <span class="wizard-check-icon">4</span>
-                  <span>Validate connection with test message</span>
+                  <span>Validate</span>
                 </li>
               </ul>
               <p id="wizardTelegramStatus" class="wizard-telegram-status">Status: waiting for Telegram setup steps.</p>
             </div>
             <div id="wizardModelPanel" class="wizard-model-panel hidden">
-              <p class="wizard-model-title">Model Setup Checklist</p>
+              <p class="wizard-model-title">Model</p>
               <ul class="wizard-model-checklist-list">
                 <li id="wizardModelProvider" class="wizard-check-item" data-step-index="1">
                   <span class="wizard-check-icon">1</span>
-                  <span>Choose provider</span>
+                  <span>Provider</span>
                 </li>
                 <li id="wizardModelName" class="wizard-check-item" data-step-index="2">
                   <span class="wizard-check-icon">2</span>
-                  <span>Choose model</span>
+                  <span>Model</span>
                 </li>
                 <li id="wizardModelCredential" class="wizard-check-item" data-step-index="3">
                   <span class="wizard-check-icon">3</span>
-                  <span>Save API credential</span>
+                  <span>Credential</span>
                 </li>
               </ul>
               <div class="wizard-model-summary">
@@ -178,30 +180,30 @@
             <div id="wizardInputContainer" class="wizard-input-container"></div>
             <p id="wizardValidationMessage" class="wizard-validation-message hidden"></p>
             <div class="actions wizard-actions">
-              <button id="wizardSubmitButton" class="button primary">Submit Step</button>
-              <button id="wizardCancelButton" class="button">Cancel Wizard</button>
-              <button id="wizardRefreshButton" class="button">Refresh Status</button>
-              <button id="wizardCompleteButton" class="button">Mark Onboarding Complete</button>
+              <button id="wizardSubmitButton" class="button primary">Submit</button>
+              <button id="wizardCancelButton" class="button">Cancel</button>
+              <button id="wizardRefreshButton" class="button">Refresh</button>
+              <button id="wizardCompleteButton" class="button">Done</button>
             </div>
           </div>
 
-          <pre id="wizardRawState" class="wizard-raw">Wizard state will appear here.</pre>
+          <pre id="wizardRawState" class="wizard-raw">State</pre>
 
           <div class="divider"></div>
 
           <div class="panel-header">
-            <h2>User-Friendly Config</h2>
+            <h2>Settings</h2>
             <button id="saveConfigButton" class="button">Save</button>
           </div>
 
           <form id="configForm" class="form" autocomplete="off">
             <label>
-              Profile Name
+              Name
               <input id="profileName" type="text" placeholder="Personal" />
             </label>
 
             <label>
-              Workspace Path
+              Folder
               <input id="workspacePath" type="text" placeholder="C:\\Users\\You\\OpenClaw" />
             </label>
 
@@ -217,12 +219,20 @@
 
             <label class="toggle-row">
               <input id="autoStartGateway" type="checkbox" />
-              Auto-start gateway on app launch
+              Start gateway on open
             </label>
+
+            <label class="toggle-row">
+              <input id="alwaysOnGatewayToggle" type="checkbox" disabled />
+              Always on (sign-in)
+            </label>
+            <p id="alwaysOnGatewayDetail" class="panel-caption config-hint">
+              Waiting for check.
+            </p>
           </form>
 
           <div class="notes">
-            <h3>Activity Log</h3>
+            <h3>Log</h3>
             <pre id="logOutput" class="log">App ready.</pre>
           </div>
         </section>
@@ -231,20 +241,20 @@
       <main id="controlWorkspace" class="control-workspace hidden">
         <section class="panel control-panel">
           <div class="panel-header">
-            <h2>OpenClaw Control</h2>
-            <span class="panel-caption">Embedded inside this app</span>
+            <h2>Control</h2>
+            <span class="panel-caption">In app</span>
           </div>
 
           <div class="actions control-actions">
-            <button id="reloadControlButton" class="button">Reload Control UI</button>
-            <button id="retryGatewayButton" class="button">Start Gateway + Retry</button>
-            <button id="backToSetupButton" class="button">Back to Setup</button>
+            <button id="reloadControlButton" class="button">Reload</button>
+            <button id="retryGatewayButton" class="button">Start + Retry</button>
+            <button id="backToSetupButton" class="button">Back</button>
           </div>
 
           <div class="control-status-wrap">
             <p id="controlStatus" class="control-status">Waiting for gateway readiness check...</p>
             <p id="controlFallback" class="control-fallback hidden">
-              Gateway is not ready yet. Use "Start Gateway + Retry" or switch back to Setup Assistant.
+              Gateway is not ready. Start + Retry.
             </p>
           </div>
 

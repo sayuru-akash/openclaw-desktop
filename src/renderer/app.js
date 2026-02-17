@@ -15,7 +15,8 @@ const statusElements = {
   systemd: byId("systemdValue"),
   openclaw: byId("openClawValue"),
   gateway: byId("gatewayValue"),
-  setupStage: byId("setupStageValue")
+  setupStage: byId("setupStageValue"),
+  alwaysOnGateway: byId("alwaysOnGatewayValue")
 };
 
 const actionButtons = {
@@ -82,6 +83,11 @@ const wizardElements = {
   rawState: byId("wizardRawState")
 };
 
+const alwaysOnElements = {
+  toggle: byId("alwaysOnGatewayToggle"),
+  detail: byId("alwaysOnGatewayDetail")
+};
+
 const setupWorkspace = byId("setupWorkspace");
 const controlWorkspace = byId("controlWorkspace");
 const controlStatus = byId("controlStatus");
@@ -94,6 +100,7 @@ let lastEnvironmentStatus = null;
 let lastSetupState = null;
 let activeWorkspace = "setup";
 let removeSetupProgressListener = null;
+let lastAlwaysOnGatewayStatus = null;
 let wizardSessionId = "";
 let currentWizardStep = null;
 let currentWizardTemplate = null;
@@ -383,6 +390,34 @@ function renderEnvironment(status) {
   maybeAutoHandoffToControl();
 }
 
+function renderAlwaysOnGatewayStatus(status) {
+  lastAlwaysOnGatewayStatus = status;
+
+  if (!status.supported) {
+    setStatus(statusElements.alwaysOnGateway, "Unsupported", "bad");
+    alwaysOnElements.toggle.checked = false;
+    alwaysOnElements.toggle.disabled = true;
+    alwaysOnElements.detail.textContent = status.detail;
+    return;
+  }
+
+  setStatus(statusElements.alwaysOnGateway, status.enabled ? "Enabled" : "Disabled", status.enabled ? "ok" : "warn");
+  alwaysOnElements.toggle.checked = status.enabled;
+  alwaysOnElements.toggle.disabled = false;
+  alwaysOnElements.detail.textContent = status.detail;
+}
+
+async function refreshAlwaysOnGatewayStatus(logMessage = false) {
+  const status = await window.openclaw.getAlwaysOnGatewayStatus();
+  renderAlwaysOnGatewayStatus(status);
+
+  if (logMessage) {
+    appendLog(`Always-on gateway: ${status.enabled ? "enabled" : "disabled"}. ${status.detail}`);
+  }
+
+  return status;
+}
+
 function applyActionAvailability(status, setupState) {
   if (!status) {
     return;
@@ -466,6 +501,7 @@ async function runEnvironmentCheck() {
   appendLog("Running environment checks...");
   const status = await window.openclaw.getEnvironmentStatus();
   renderEnvironment(status);
+  await refreshAlwaysOnGatewayStatus();
   appendLog("Environment checks completed.");
 }
 
@@ -1286,65 +1322,65 @@ function buildWizardTemplate(step) {
   };
 
   if (intent === "provider") {
-    template.title = "Choose Your Model Provider";
-    template.message = "Pick the AI provider OpenClaw should use. You can change this later in settings.";
-    template.guideHint = "Use a provider where you already have API access to finish setup quickly.";
+    template.title = "Choose Provider";
+    template.message = "Pick your AI provider.";
+    template.guideHint = "Use the provider you already have access to.";
     template.selectPlaceholder = "Choose a provider";
     template.submitLabel = "Use Provider";
   } else if (intent === "model") {
-    template.title = "Choose Your Default Model";
-    template.message = "Pick the model OpenClaw should use by default.";
-    template.guideHint = "Start with a stable, lower-cost model first. You can switch later.";
+    template.title = "Choose Model";
+    template.message = "Pick a default model.";
+    template.guideHint = "You can change this later.";
     template.selectPlaceholder = "Choose a model";
     template.textPlaceholder = "gpt-4o-mini";
     template.submitLabel = "Use Model";
   } else if (intent === "auth") {
-    template.title = "Connect Provider Credentials";
-    template.message = "Enter your token/key so OpenClaw can authenticate with your provider.";
-    template.guideHint = "Credentials are sensitive. Paste carefully and avoid extra spaces.";
+    template.title = "Add Credential";
+    template.message = "Paste your API key/token.";
+    template.guideHint = "Keep this private.";
     template.textPlaceholder = "Paste API key or token";
     template.submitLabel = "Save Credential";
   } else if (intent === "workspace") {
-    template.title = "Choose Workspace Folder";
-    template.message = "Set the workspace path where OpenClaw keeps project context and files.";
-    template.guideHint = "Pick a folder you can easily access later, for example C:\\Users\\You\\OpenClaw.";
+    template.title = "Choose Folder";
+    template.message = "Choose where OpenClaw stores data.";
+    template.guideHint = "Use an easy-to-find folder.";
     template.textPlaceholder = "C:\\Users\\You\\OpenClaw";
     template.submitLabel = "Use Workspace";
   } else if (intent === "whatsapp") {
-    template.title = "Connect WhatsApp Channel";
-    template.message = "Set up WhatsApp so OpenClaw can receive and send messages on your behalf.";
-    template.guideHint = "Keep your phone online during pairing. If QR appears, open WhatsApp and scan from Linked Devices.";
+    template.title = "Connect WhatsApp";
+    template.message = "Pair your WhatsApp account.";
+    template.guideHint = "Keep your phone online while pairing.";
     template.selectPlaceholder = "Choose WhatsApp setup option";
-    template.submitLabel = "Continue WhatsApp Setup";
+    template.submitLabel = "Continue";
 
     if (textRole === "phone_number") {
       template.textPlaceholder = "+15551234567";
       template.submitLabel = "Use Phone Number";
-      template.guideHint = "Enter full number with country code, digits only or with leading +.";
+      template.guideHint = "Include country code.";
     } else if (textRole === "pairing_code") {
       template.textPlaceholder = "Enter pairing code";
       template.submitLabel = "Submit Pairing Code";
-      template.guideHint = "Copy the code exactly as shown on your phone.";
+      template.guideHint = "Copy it exactly.";
     }
   } else if (intent === "telegram") {
-    template.title = "Connect Telegram Bot Channel";
-    template.message = "Set up a Telegram bot connection for OpenClaw.";
-    template.guideHint = "Use @BotFather to create bot credentials, then paste them here.";
+    template.title = "Connect Telegram";
+    template.message = "Set up your Telegram bot.";
+    template.guideHint = "Create bot in @BotFather, then paste values here.";
     template.selectPlaceholder = "Choose Telegram setup option";
-    template.submitLabel = "Continue Telegram Setup";
+    template.submitLabel = "Continue";
 
     if (textRole === "bot_token") {
       template.textPlaceholder = "123456789:AAExampleBotToken";
       template.submitLabel = "Save Bot Token";
-      template.guideHint = "Paste token exactly from @BotFather. It usually contains a colon.";
+      template.guideHint = "Token usually has a colon.";
     } else if (textRole === "chat_id") {
       template.textPlaceholder = "-1001234567890";
       template.submitLabel = "Save Chat ID";
-      template.guideHint = "Use chat or channel ID where your bot should operate.";
+      template.guideHint = "Use the destination chat/channel ID.";
     } else if (textRole === "bot_username") {
       template.textPlaceholder = "@your_bot_username";
       template.submitLabel = "Save Bot Username";
-      template.guideHint = "Enter username with or without @. Example: @openclaw_helper_bot.";
+      template.guideHint = "With or without @.";
     }
   }
 
@@ -1416,7 +1452,7 @@ function setWizardSubmitLabel(stepType, template) {
   }
 
   if (stepType === "action") {
-    wizardElements.submit.textContent = "Apply Action";
+    wizardElements.submit.textContent = "Apply";
     return;
   }
 
@@ -1426,7 +1462,7 @@ function setWizardSubmitLabel(stepType, template) {
   }
 
   if (stepType === "text" || stepType === "select" || stepType === "multiselect" || stepType === "confirm") {
-    wizardElements.submit.textContent = "Submit Answer";
+    wizardElements.submit.textContent = "Submit";
     return;
   }
 
@@ -1447,7 +1483,7 @@ function resetWizardUi() {
   resetWizardQrPanel();
   resetWizardTelegramPanel();
   resetWizardModelPanel();
-  setWizardSessionLabel("No active wizard session.");
+  setWizardSessionLabel("No session.");
   setWizardRawState({ note: "Wizard state will appear here." });
   updateWizardActionAvailability();
 }
@@ -1464,7 +1500,7 @@ function renderWizardInput(step, template) {
   if (step.type === "text") {
     const input = document.createElement("input");
     input.type = step.sensitive ? "password" : "text";
-    input.placeholder = step.placeholder || template.textPlaceholder || "Enter value and click Submit Answer";
+    input.placeholder = step.placeholder || template.textPlaceholder || "Enter value and submit";
     input.value = typeof step.initialValue === "string" ? step.initialValue : "";
     input.id = "wizardTextInput";
     input.autocomplete = "off";
@@ -1602,7 +1638,7 @@ function renderWizardInput(step, template) {
     } else if (template.intent === "model" || template.intent === "provider" || template.intent === "auth") {
       note.textContent = "Applying model configuration. This status refreshes automatically every few seconds.";
     } else {
-      note.textContent = "This step is running work in the background. Status refreshes automatically every few seconds.";
+      note.textContent = "Working in background. Auto-refreshing.";
     }
     wizardElements.inputContainer.appendChild(note);
     startWizardStatusPolling();
@@ -1613,13 +1649,13 @@ function renderWizardInput(step, template) {
     const note = document.createElement("p");
     note.className = "wizard-inline-note";
     if (template.intent === "whatsapp") {
-      note.textContent = "Follow the WhatsApp instruction above, then click Continue WhatsApp Setup.";
+      note.textContent = "Follow the step above, then continue.";
     } else if (template.intent === "telegram") {
-      note.textContent = "Follow the Telegram bot instruction above, then click Continue Telegram Setup.";
+      note.textContent = "Follow the step above, then continue.";
     } else if (template.intent === "model" || template.intent === "provider" || template.intent === "auth") {
-      note.textContent = "Follow the model setup instruction above, then continue.";
+      note.textContent = "Follow the step above, then continue.";
     } else {
-      note.textContent = "Read this step and continue.";
+      note.textContent = "Continue when ready.";
     }
     wizardElements.inputContainer.appendChild(note);
     return;
@@ -1858,7 +1894,7 @@ function renderWizardResult(payload) {
   if (wizardSessionId) {
     setWizardSessionLabel(`Session: ${wizardSessionId}`);
   } else {
-    setWizardSessionLabel("No active wizard session.");
+    setWizardSessionLabel("No session.");
   }
 
   setWizardRawState(payload);
@@ -1899,7 +1935,7 @@ async function startWizard() {
     return;
   }
 
-  appendLog("Starting in-app onboarding wizard via gateway RPC...");
+  appendLog("Starting onboarding wizard...");
   clearWizardValidation();
 
   if (!lastEnvironmentStatus || !lastEnvironmentStatus.gatewayRunning) {
@@ -1920,7 +1956,7 @@ async function startWizard() {
 
 async function submitWizardStep() {
   if (!wizardSessionId) {
-    appendLog("No active wizard session. Start wizard first.");
+    appendLog("No session. Start first.");
     setWizardValidation("Start the wizard before submitting a step.");
     return;
   }
@@ -1949,8 +1985,8 @@ async function submitWizardStep() {
 async function refreshWizardStatus(silent = false) {
   if (!wizardSessionId) {
     if (!silent) {
-      appendLog("No active wizard session to refresh.");
-      setWizardValidation("No active wizard session.");
+      appendLog("No session to refresh.");
+      setWizardValidation("No session.");
     }
     return;
   }
@@ -1979,7 +2015,7 @@ async function refreshWizardStatus(silent = false) {
 
 async function cancelWizard() {
   if (!wizardSessionId) {
-    appendLog("No active wizard session to cancel.");
+    appendLog("No session to cancel.");
     return;
   }
 
@@ -2158,6 +2194,31 @@ function wireActions() {
   byId("saveConfigButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, saveConfig);
+  });
+
+  alwaysOnElements.toggle.addEventListener("change", async () => {
+    const requested = alwaysOnElements.toggle.checked;
+    const previous = Boolean(lastAlwaysOnGatewayStatus && lastAlwaysOnGatewayStatus.enabled);
+    alwaysOnElements.toggle.disabled = true;
+
+    try {
+      appendLog(
+        requested
+          ? "Enabling always-on gateway via Windows Task Scheduler..."
+          : "Disabling always-on gateway..."
+      );
+      const status = await window.openclaw.setAlwaysOnGatewayEnabled(requested);
+      renderAlwaysOnGatewayStatus(status);
+      appendLog(status.detail);
+    } catch (error) {
+      alwaysOnElements.toggle.checked = previous;
+      appendLog(`Always-on toggle failed: ${formatError(error)}`);
+      await refreshAlwaysOnGatewayStatus();
+    } finally {
+      if (lastAlwaysOnGatewayStatus && lastAlwaysOnGatewayStatus.supported) {
+        alwaysOnElements.toggle.disabled = false;
+      }
+    }
   });
 
   controlButtons.reload.addEventListener("click", async (event) => {

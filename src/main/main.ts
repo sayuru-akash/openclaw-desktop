@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import path from "node:path";
 import type { SetupProgressEvent } from "../shared/types";
 import { ConfigStore } from "./services/config-store";
@@ -11,6 +11,8 @@ const environmentService = new EnvironmentService();
 let configStore: ConfigStore;
 let setupOrchestrator: SetupOrchestrator;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 const pendingSetupEvents: SetupProgressEvent[] = [];
 
 function resolvePreloadFile(): string {
@@ -61,6 +63,78 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  mainWindow.on("close", (event) => {
+    if (process.platform !== "win32" || isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+}
+
+function buildTrayIcon() {
+  const image = nativeImage.createFromDataURL(
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAM1BMVEVHcEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAx8qYvAAAAEHRSTlMAECAwQFBgcICPn6+/z9/vH+xR+AAAAG9JREFUGNNjYIACRkYmZi5uHh4+AXY2bi4eHj4gHj4Bdg5uHm4efg5+QW4eQR4+QX4BQVFBYVFRSVlFXUNTTX1Dc0NTS1tbR1dPX4BLS0dXR09fQMjI20jIyNVQ2NjarA0NfVAADEQQYlF9MZqwAAAABJRU5ErkJggg=="
+  );
+
+  return process.platform === "win32" ? image.resize({ width: 16, height: 16 }) : image;
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.focus();
+}
+
+function createTray(): void {
+  if (tray) {
+    return;
+  }
+
+  tray = new Tray(buildTrayIcon());
+  tray.setToolTip("OpenClaw Desktop");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Open OpenClaw Desktop",
+        click: () => {
+          showMainWindow();
+        }
+      },
+      {
+        type: "separator"
+      },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ])
+  );
+
+  tray.on("click", () => {
+    if (mainWindow && mainWindow.isVisible()) {
+      mainWindow.hide();
+      return;
+    }
+
+    showMainWindow();
+  });
 }
 
 function broadcastSetupProgress(event: SetupProgressEvent): void {
@@ -89,6 +163,10 @@ function flushPendingSetupEvents(): void {
 
 function registerIpcHandlers(): void {
   ipcMain.handle("env:get-status", () => environmentService.getEnvironmentStatus());
+  ipcMain.handle("always-on:get-status", () => environmentService.getAlwaysOnGatewayStatus());
+  ipcMain.handle("always-on:set-enabled", (_event, enabled) =>
+    environmentService.setAlwaysOnGatewayEnabled(Boolean(enabled))
+  );
   ipcMain.handle("env:install-wsl", () => environmentService.installWsl());
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
   ipcMain.handle("env:run-onboarding", () => environmentService.runOnboarding());
@@ -139,17 +217,25 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   await setupOrchestrator.resumeAfterReboot();
   createWindow();
+  createTray();
   await maybeAutoStartGateway();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (BrowserWindow.getAllWindows().length === 0 || !mainWindow) {
       createWindow();
+      return;
     }
+
+    showMainWindow();
   });
 });
 
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (process.platform !== "darwin" && isQuitting) {
     app.quit();
   }
 });

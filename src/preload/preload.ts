@@ -9,6 +9,8 @@ import type {
 
 const api: RendererApi = {
   getEnvironmentStatus: () => ipcRenderer.invoke("env:get-status"),
+  getAlwaysOnGatewayStatus: () => ipcRenderer.invoke("always-on:get-status"),
+  setAlwaysOnGatewayEnabled: (enabled: boolean) => ipcRenderer.invoke("always-on:set-enabled", enabled),
   installWsl: () => ipcRenderer.invoke("env:install-wsl"),
   installOpenClaw: () => ipcRenderer.invoke("env:install-openclaw"),
   runOnboarding: () => ipcRenderer.invoke("env:run-onboarding"),

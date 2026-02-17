@@ -1,4 +1,5 @@
 import type {
+  AlwaysOnGatewayStatus,
   CommandResult,
   EnvironmentStatus,
   WizardAnswer,
@@ -9,6 +10,8 @@ import type {
   WizardStatusResult
 } from "../../shared/types";
 import { runCommand, runCommandStreaming } from "./command-runner";
+
+const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
 
 export class EnvironmentService {
   public async getEnvironmentStatus(): Promise<EnvironmentStatus> {
@@ -137,6 +140,107 @@ export class EnvironmentService {
     return this.runInWsl("openclaw gateway stop");
   }
 
+  public async getAlwaysOnGatewayStatus(): Promise<AlwaysOnGatewayStatus> {
+    if (process.platform !== "win32") {
+      return {
+        supported: false,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: "Always-on gateway uses Windows Task Scheduler and is only available on Windows."
+      };
+    }
+
+    const query = await runCommand(
+      "schtasks.exe",
+      ["/Query", "/TN", ALWAYS_ON_TASK_NAME, "/FO", "LIST", "/V"],
+      { okExitCodes: [1] }
+    );
+
+    if (query.code === 1 && this.isScheduledTaskMissing(query)) {
+      return {
+        supported: true,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: "Disabled. Gateway will not auto-start at Windows sign-in."
+      };
+    }
+
+    if (query.code !== 0) {
+      return {
+        supported: true,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
+      };
+    }
+
+    if (!query.ok) {
+      return {
+        supported: true,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
+      };
+    }
+
+    const statusMatch = query.stdout.match(/Status:\s*(.+)/i);
+    const statusLabel = statusMatch ? statusMatch[1].trim() : "Ready";
+    return {
+      supported: true,
+      enabled: true,
+      taskName: ALWAYS_ON_TASK_NAME,
+      detail: `Enabled. Task Scheduler state: ${statusLabel}.`
+    };
+  }
+
+  public async setAlwaysOnGatewayEnabled(enabled: boolean): Promise<AlwaysOnGatewayStatus> {
+    if (process.platform !== "win32") {
+      throw new Error("Always-on gateway is supported only on Windows.");
+    }
+
+    if (enabled) {
+      const createResult = await runCommand("schtasks.exe", [
+        "/Create",
+        "/TN",
+        ALWAYS_ON_TASK_NAME,
+        "/SC",
+        "ONLOGON",
+        "/RL",
+        "LIMITED",
+        "/F",
+        "/TR",
+        this.getAlwaysOnTaskAction()
+      ]);
+
+      if (!createResult.ok) {
+        throw new Error(createResult.stderr || createResult.stdout || "Failed to create always-on gateway task.");
+      }
+
+      void this.gatewayStart();
+      return this.getAlwaysOnGatewayStatus();
+    }
+
+    const deleteResult = await runCommand(
+      "schtasks.exe",
+      ["/Delete", "/TN", ALWAYS_ON_TASK_NAME, "/F"],
+      { okExitCodes: [1] }
+    );
+
+    if (deleteResult.code === 1 && this.isScheduledTaskMissing(deleteResult)) {
+      return this.getAlwaysOnGatewayStatus();
+    }
+
+    if (deleteResult.code !== 0) {
+      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
+    }
+
+    if (!deleteResult.ok) {
+      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
+    }
+
+    return this.getAlwaysOnGatewayStatus();
+  }
+
   public rebootRequired(result: CommandResult): boolean {
     if (result.code === 3010) {
       return true;
@@ -148,6 +252,16 @@ export class EnvironmentService {
 
   private runInWsl(command: string): Promise<CommandResult> {
     return runCommand("wsl.exe", ["bash", "-lc", command]);
+  }
+
+  private getAlwaysOnTaskAction(): string {
+    const gatewayCommand = "openclaw gateway start >/dev/null 2>&1 || true";
+    return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "wsl.exe bash -lc '${gatewayCommand}'"`;
+  }
+
+  private isScheduledTaskMissing(result: CommandResult): boolean {
+    const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
+    return output.includes("cannot find the file specified") || output.includes("cannot find the task");
   }
 
   private async runWizardCall<T>(method: string, params: unknown): Promise<T> {

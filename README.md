@@ -18,6 +18,8 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
   - Auto-progress Telegram bot checklist (`BotFather -> token -> destination -> validate`)
   - Auto-progress model checklist (`Provider -> Model -> Credential`) with current selection summary
   - Automatic handoff from setup to embedded in-app Control UI when gateway is healthy
+  - Tray support with close-to-tray behavior on Windows (app keeps running unless user selects Quit)
+  - Always-on gateway toggle backed by Windows Task Scheduler (`ONLOGON` task)
   - Install WSL with UAC elevation (`Start-Process wsl.exe -Verb RunAs`)
   - Persist setup state and resume after reboot
   - Install OpenClaw in WSL (`curl -fsSL https://openclaw.ai/install.sh | bash`)

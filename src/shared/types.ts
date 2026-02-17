@@ -96,6 +96,13 @@ export interface EnvironmentStatus {
   notes: string[];
 }
 
+export interface AlwaysOnGatewayStatus {
+  supported: boolean;
+  enabled: boolean;
+  taskName: string;
+  detail: string;
+}
+
 export interface AppConfig {
   profileName: string;
   workspacePath: string;
@@ -107,6 +114,8 @@ export interface AppConfig {
 
 export interface RendererApi {
   getEnvironmentStatus: () => Promise<EnvironmentStatus>;
+  getAlwaysOnGatewayStatus: () => Promise<AlwaysOnGatewayStatus>;
+  setAlwaysOnGatewayEnabled: (enabled: boolean) => Promise<AlwaysOnGatewayStatus>;
   installWsl: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
   runOnboarding: () => Promise<CommandResult>;
