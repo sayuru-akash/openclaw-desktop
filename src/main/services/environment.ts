@@ -1,7 +1,11 @@
 import type {
   AlwaysOnGatewayStatus,
+  ChannelStatusItem,
+  ChannelStatusResult,
   CommandResult,
   EnvironmentStatus,
+  ManagedChannel,
+  ModelStatusResult,
   WizardAnswer,
   WizardNextResult,
   WizardRunStatus,
@@ -9,7 +13,15 @@ import type {
   WizardStartResult,
   WizardStatusResult
 } from "../../shared/types";
+import os from "node:os";
 import { runCommand, runCommandStreaming } from "./command-runner";
+import {
+  inferChannelStatusFromPayload,
+  inferModelStatusFromPayload,
+  isScheduledTaskMissing,
+  isWindowsBuildSupported,
+  parseWindowsBuildFromRelease
+} from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
 
@@ -30,6 +42,11 @@ export class EnvironmentService {
     if (!status.isWindows) {
       status.notes.push("This app is designed for Windows. Setup checks are disabled on non-Windows hosts.");
       return status;
+    }
+
+    const windowsBuild = parseWindowsBuildFromRelease(os.release());
+    if (!isWindowsBuildSupported(windowsBuild)) {
+      status.notes.push("Windows build may be too old for seamless WSL setup. Prefer Windows 10 build 19041+ or Windows 11.");
     }
 
     const wslStatus = await runCommand("wsl.exe", ["--status"]);
@@ -140,6 +157,109 @@ export class EnvironmentService {
     return this.runInWsl("openclaw gateway stop");
   }
 
+  public async getChannelStatuses(): Promise<ChannelStatusResult> {
+    const whatsapp = await this.readChannelStatus("whatsapp");
+    const telegram = await this.readChannelStatus("telegram");
+    return {
+      checkedAt: new Date().toISOString(),
+      channels: [whatsapp, telegram]
+    };
+  }
+
+  public async reconnectChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
+    const command = channel === "whatsapp"
+      ? "openclaw channels login --channel whatsapp"
+      : "openclaw channels login --channel telegram";
+
+    const result = await this.runInWsl(command);
+    if (!result.ok) {
+      throw new Error(result.stderr || result.stdout || `Failed to reconnect ${channel}.`);
+    }
+
+    return this.readChannelStatus(channel);
+  }
+
+  public async disableChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
+    const commands = [
+      `openclaw channels logout --channel ${channel}`,
+      `openclaw channels remove --channel ${channel} --delete`,
+      `openclaw channels remove --channel ${channel}`
+    ];
+
+    let lastError = "";
+    for (const command of commands) {
+      const result = await this.runInWsl(command);
+      if (result.ok) {
+        return this.readChannelStatus(channel);
+      }
+      lastError = result.stderr || result.stdout || lastError;
+    }
+
+    throw new Error(lastError || `Unable to disable ${channel} channel.`);
+  }
+
+  public async configureTelegramBot(token: string): Promise<ChannelStatusItem> {
+    const normalizedToken = token.trim();
+    if (!normalizedToken) {
+      throw new Error("Telegram bot token is required.");
+    }
+
+    const tokenArg = this.escapeShellSingleQuoted(normalizedToken);
+    const commands = [
+      `openclaw channels add --channel telegram --token ${tokenArg}`,
+      `openclaw channels login --channel telegram --token ${tokenArg}`
+    ];
+
+    let lastError = "";
+    for (const command of commands) {
+      const result = await this.runInWsl(command);
+      if (result.ok) {
+        return this.readChannelStatus("telegram");
+      }
+      lastError = result.stderr || result.stdout || lastError;
+    }
+
+    throw new Error(lastError || "Unable to configure Telegram bot token.");
+  }
+
+  public async getModelStatus(): Promise<ModelStatusResult> {
+    const result = await this.runInWsl("openclaw models list --json");
+    if (!result.ok) {
+      throw new Error(result.stderr || result.stdout || "Unable to load model status.");
+    }
+
+    const payload = this.parseJsonOutput(result.stdout, result.stderr);
+    const inferred = inferModelStatusFromPayload(payload);
+    return {
+      checkedAt: new Date().toISOString(),
+      provider: inferred.provider,
+      model: inferred.model,
+      availableProviders: inferred.availableProviders,
+      detail: inferred.detail
+    };
+  }
+
+  public async applyModelSelection(provider: string, model: string): Promise<ModelStatusResult> {
+    const normalizedProvider = provider.trim();
+    const normalizedModel = model.trim();
+
+    if (!normalizedProvider || !normalizedModel) {
+      throw new Error("Provider and model are required.");
+    }
+
+    const providerArg = this.escapeShellSingleQuoted(normalizedProvider);
+    const modelArg = this.escapeShellSingleQuoted(normalizedModel);
+    const result = await this.runInWsl(
+      `openclaw models set --provider ${providerArg} --model ${modelArg} --json`
+    );
+
+    if (!result.ok) {
+      throw new Error(result.stderr || result.stdout || "Unable to apply model selection.");
+    }
+
+    return this.getModelStatus();
+  }
+
   public async getAlwaysOnGatewayStatus(): Promise<AlwaysOnGatewayStatus> {
     if (process.platform !== "win32") {
       return {
@@ -156,7 +276,7 @@ export class EnvironmentService {
       { okExitCodes: [1] }
     );
 
-    if (query.code === 1 && this.isScheduledTaskMissing(query)) {
+    if (query.code === 1 && isScheduledTaskMissing(query)) {
       return {
         supported: true,
         enabled: false,
@@ -226,7 +346,7 @@ export class EnvironmentService {
       { okExitCodes: [1] }
     );
 
-    if (deleteResult.code === 1 && this.isScheduledTaskMissing(deleteResult)) {
+    if (deleteResult.code === 1 && isScheduledTaskMissing(deleteResult)) {
       return this.getAlwaysOnGatewayStatus();
     }
 
@@ -254,14 +374,30 @@ export class EnvironmentService {
     return runCommand("wsl.exe", ["bash", "-lc", command]);
   }
 
+  private async readChannelStatus(channel: ManagedChannel): Promise<ChannelStatusItem> {
+    const jsonCommand = `openclaw channels status --channel ${channel} --json`;
+    const jsonResult = await this.runInWsl(jsonCommand);
+
+    if (jsonResult.ok) {
+      try {
+        const payload = this.parseJsonOutput(jsonResult.stdout, jsonResult.stderr);
+        return inferChannelStatusFromPayload(channel, payload, jsonResult.stdout);
+      } catch {
+        return inferChannelStatusFromPayload(channel, jsonResult.stdout, jsonResult.stdout);
+      }
+    }
+
+    const fallback = await this.runInWsl(`openclaw channels status --channel ${channel}`);
+    return inferChannelStatusFromPayload(
+      channel,
+      fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`,
+      fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`
+    );
+  }
+
   private getAlwaysOnTaskAction(): string {
     const gatewayCommand = "openclaw gateway start >/dev/null 2>&1 || true";
     return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "wsl.exe bash -lc '${gatewayCommand}'"`;
-  }
-
-  private isScheduledTaskMissing(result: CommandResult): boolean {
-    const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
-    return output.includes("cannot find the file specified") || output.includes("cannot find the task");
   }
 
   private async runWizardCall<T>(method: string, params: unknown): Promise<T> {

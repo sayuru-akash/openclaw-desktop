@@ -1,19 +1,24 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import path from "node:path";
-import type { SetupProgressEvent } from "../shared/types";
+import type { ManagedChannel, SetupProgressEvent, UpdateStatusEvent } from "../shared/types";
+import { AutoUpdaterService } from "./services/auto-updater";
 import { ConfigStore } from "./services/config-store";
 import { EnvironmentService } from "./services/environment";
+import { isGatewayRunningOutput } from "./services/parsers";
 import { SetupOrchestrator } from "./services/setup-orchestrator";
 import { SetupStore } from "./services/setup-store";
 import { WindowsStartupService } from "./services/windows-startup";
 
 const environmentService = new EnvironmentService();
+const autoUpdaterService = new AutoUpdaterService();
 let configStore: ConfigStore;
 let setupOrchestrator: SetupOrchestrator;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 const pendingSetupEvents: SetupProgressEvent[] = [];
+const pendingUpdateEvents: UpdateStatusEvent[] = [];
+let trayGatewayRunning = false;
 
 function resolvePreloadFile(): string {
   return path.join(__dirname, "..", "preload", "preload.js");
@@ -44,6 +49,7 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     flushPendingSetupEvents();
+    flushPendingUpdateEvents();
     mainWindow?.show();
   });
 
@@ -99,33 +105,105 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+function showTrayMessage(content: string, title = "OpenClaw Desktop"): void {
+  if (!tray || process.platform !== "win32") {
+    return;
+  }
+
+  tray.displayBalloon({
+    title,
+    content
+  });
+}
+
+async function refreshTrayGatewayStatus(showMessage = false): Promise<void> {
+  const result = await environmentService.gatewayStatus();
+  trayGatewayRunning = result.ok && isGatewayRunningOutput(`${result.stdout} ${result.stderr}`);
+  tray?.setToolTip(`OpenClaw Desktop - Gateway ${trayGatewayRunning ? "Running" : "Stopped"}`);
+  if (tray) {
+    tray.setContextMenu(buildTrayMenu());
+  }
+
+  if (showMessage) {
+    const detail = result.ok
+      ? trayGatewayRunning ? "Gateway is running." : "Gateway is stopped."
+      : result.stderr || result.stdout || "Could not check gateway status.";
+    showTrayMessage(detail, "Gateway Status");
+  }
+}
+
+async function handleTrayGatewayStart(): Promise<void> {
+  const result = await environmentService.gatewayStart();
+  await refreshTrayGatewayStatus(false);
+  const detail = result.ok
+    ? "Gateway start requested."
+    : result.stderr || result.stdout || "Gateway start failed.";
+  showTrayMessage(detail, "Gateway Start");
+}
+
+async function handleTrayGatewayStop(): Promise<void> {
+  const result = await environmentService.gatewayStop();
+  await refreshTrayGatewayStatus(false);
+  const detail = result.ok
+    ? "Gateway stop requested."
+    : result.stderr || result.stdout || "Gateway stop failed.";
+  showTrayMessage(detail, "Gateway Stop");
+}
+
+function buildTrayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    {
+      label: `Gateway: ${trayGatewayRunning ? "Running" : "Stopped"}`,
+      enabled: false
+    },
+    {
+      label: "Gateway Status",
+      click: () => {
+        void refreshTrayGatewayStatus(true);
+      }
+    },
+    {
+      label: "Start Gateway",
+      click: () => {
+        void handleTrayGatewayStart();
+      }
+    },
+    {
+      label: "Stop Gateway",
+      click: () => {
+        void handleTrayGatewayStop();
+      }
+    },
+    {
+      type: "separator"
+    },
+    {
+      label: "Open OpenClaw Desktop",
+      click: () => {
+        showMainWindow();
+      }
+    },
+    {
+      type: "separator"
+    },
+    {
+      label: "Quit",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+}
+
 function createTray(): void {
   if (tray) {
     return;
   }
 
   tray = new Tray(buildTrayIcon());
-  tray.setToolTip("OpenClaw Desktop");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "Open OpenClaw Desktop",
-        click: () => {
-          showMainWindow();
-        }
-      },
-      {
-        type: "separator"
-      },
-      {
-        label: "Quit",
-        click: () => {
-          isQuitting = true;
-          app.quit();
-        }
-      }
-    ])
-  );
+  tray.setToolTip("OpenClaw Desktop - Gateway Unknown");
+  tray.setContextMenu(buildTrayMenu());
 
   tray.on("click", () => {
     if (mainWindow && mainWindow.isVisible()) {
@@ -135,6 +213,8 @@ function createTray(): void {
 
     showMainWindow();
   });
+
+  void refreshTrayGatewayStatus(false);
 }
 
 function broadcastSetupProgress(event: SetupProgressEvent): void {
@@ -149,6 +229,18 @@ function broadcastSetupProgress(event: SetupProgressEvent): void {
   mainWindow.webContents.send("setup:progress", event);
 }
 
+function broadcastUpdateStatus(event: UpdateStatusEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingUpdateEvents.push(event);
+    if (pendingUpdateEvents.length > 200) {
+      pendingUpdateEvents.shift();
+    }
+    return;
+  }
+
+  mainWindow.webContents.send("update:status", event);
+}
+
 function flushPendingSetupEvents(): void {
   if (!mainWindow || mainWindow.isDestroyed() || pendingSetupEvents.length === 0) {
     return;
@@ -161,19 +253,56 @@ function flushPendingSetupEvents(): void {
   pendingSetupEvents.length = 0;
 }
 
+function flushPendingUpdateEvents(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || pendingUpdateEvents.length === 0) {
+    return;
+  }
+
+  for (const event of pendingUpdateEvents) {
+    mainWindow.webContents.send("update:status", event);
+  }
+
+  pendingUpdateEvents.length = 0;
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("env:get-status", () => environmentService.getEnvironmentStatus());
+  ipcMain.handle("channels:get-status", () => environmentService.getChannelStatuses());
+  ipcMain.handle("channels:reconnect", (_event, channel: ManagedChannel) => environmentService.reconnectChannel(channel));
+  ipcMain.handle("channels:disable", (_event, channel: ManagedChannel) => environmentService.disableChannel(channel));
+  ipcMain.handle("telegram:configure", (_event, token: string) => environmentService.configureTelegramBot(token));
+  ipcMain.handle("models:get-status", () => environmentService.getModelStatus());
+  ipcMain.handle("models:apply", (_event, provider: string, model: string) =>
+    environmentService.applyModelSelection(provider, model)
+  );
   ipcMain.handle("always-on:get-status", () => environmentService.getAlwaysOnGatewayStatus());
-  ipcMain.handle("always-on:set-enabled", (_event, enabled) =>
+  ipcMain.handle("always-on:set-enabled", (_event, enabled: boolean) =>
     environmentService.setAlwaysOnGatewayEnabled(Boolean(enabled))
   );
+  ipcMain.handle("update:get-status", () => autoUpdaterService.getStatus());
+  ipcMain.handle("update:check", () => autoUpdaterService.checkForUpdates());
+  ipcMain.handle("update:install", () => {
+    autoUpdaterService.installDownloadedUpdate();
+  });
   ipcMain.handle("env:install-wsl", () => environmentService.installWsl());
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
   ipcMain.handle("env:run-onboarding", () => environmentService.runOnboarding());
 
-  ipcMain.handle("gateway:status", () => environmentService.gatewayStatus());
-  ipcMain.handle("gateway:start", () => environmentService.gatewayStart());
-  ipcMain.handle("gateway:stop", () => environmentService.gatewayStop());
+  ipcMain.handle("gateway:status", async () => {
+    const result = await environmentService.gatewayStatus();
+    await refreshTrayGatewayStatus(false);
+    return result;
+  });
+  ipcMain.handle("gateway:start", async () => {
+    const result = await environmentService.gatewayStart();
+    await refreshTrayGatewayStatus(false);
+    return result;
+  });
+  ipcMain.handle("gateway:stop", async () => {
+    const result = await environmentService.gatewayStop();
+    await refreshTrayGatewayStatus(false);
+    return result;
+  });
 
   ipcMain.handle("config:load", () => configStore.load());
   ipcMain.handle("config:save", (_event, config) => configStore.save(config));
@@ -214,11 +343,15 @@ app.whenReady().then(async () => {
   setupOrchestrator.onProgress((event) => {
     broadcastSetupProgress(event);
   });
+  autoUpdaterService.onStatus((event) => {
+    broadcastUpdateStatus(event);
+  });
   registerIpcHandlers();
   await setupOrchestrator.resumeAfterReboot();
   createWindow();
   createTray();
   await maybeAutoStartGateway();
+  autoUpdaterService.startBackgroundChecks();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0 || !mainWindow) {

@@ -88,6 +88,41 @@ const alwaysOnElements = {
   detail: byId("alwaysOnGatewayDetail")
 };
 
+const channelElements = {
+  refresh: byId("channelsRefreshButton"),
+  whatsappStatus: byId("whatsappChannelStatus"),
+  whatsappDetail: byId("whatsappChannelDetail"),
+  whatsappReconnect: byId("whatsappReconnectButton"),
+  whatsappDisable: byId("whatsappDisableButton"),
+  telegramStatus: byId("telegramChannelStatus"),
+  telegramDetail: byId("telegramChannelDetail"),
+  telegramReconnect: byId("telegramReconnectButton"),
+  telegramDisable: byId("telegramDisableButton")
+};
+
+const modelManagementElements = {
+  refresh: byId("modelRefreshButton"),
+  current: byId("modelCurrentStatus"),
+  provider: byId("manageModelProvider"),
+  model: byId("manageModelName"),
+  apply: byId("modelApplyButton")
+};
+
+const updateElements = {
+  check: byId("updateCheckButton"),
+  install: byId("updateInstallButton"),
+  status: byId("updateStatusText")
+};
+
+const telegramHelperElements = {
+  startReconnect: byId("telegramHelperStartButton"),
+  copyBotFather: byId("copyBotFatherButton"),
+  copyNewBot: byId("copyNewBotCommandButton"),
+  token: byId("telegramHelperToken"),
+  saveToken: byId("telegramHelperSaveTokenButton"),
+  validation: byId("telegramHelperValidation")
+};
+
 const setupWorkspace = byId("setupWorkspace");
 const controlWorkspace = byId("controlWorkspace");
 const controlStatus = byId("controlStatus");
@@ -100,7 +135,13 @@ let lastEnvironmentStatus = null;
 let lastSetupState = null;
 let activeWorkspace = "setup";
 let removeSetupProgressListener = null;
+let removeUpdateStatusListener = null;
 let lastAlwaysOnGatewayStatus = null;
+let lastChannelStatuses = null;
+let lastModelStatus = null;
+let lastUpdateStatus = null;
+let lastUpdateLogKey = "";
+let lastUpdateLoggedProgressBucket = -1;
 let wizardSessionId = "";
 let currentWizardStep = null;
 let currentWizardTemplate = null;
@@ -159,6 +200,39 @@ function safeStringify(value) {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
+  }
+}
+
+function setTelegramHelperValidation(message) {
+  if (!message) {
+    telegramHelperElements.validation.textContent = "";
+    telegramHelperElements.validation.classList.add("hidden");
+    return;
+  }
+
+  telegramHelperElements.validation.textContent = message;
+  telegramHelperElements.validation.classList.remove("hidden");
+}
+
+function validateTelegramHelperToken(token) {
+  if (!token || token.trim().length === 0) {
+    return "Enter bot token.";
+  }
+
+  const normalized = token.trim();
+  if (!/^[0-9]{5,}:[A-Za-z0-9_-]{15,}$/.test(normalized)) {
+    return "Token format looks wrong.";
+  }
+
+  return "";
+}
+
+async function copyToClipboard(value, successMessage) {
+  try {
+    await navigator.clipboard.writeText(value);
+    appendLog(successMessage);
+  } catch (error) {
+    appendLog(`Copy failed: ${formatError(error)}`);
   }
 }
 
@@ -418,6 +492,87 @@ async function refreshAlwaysOnGatewayStatus(logMessage = false) {
   return status;
 }
 
+function toneForChannel(item) {
+  if (item.connected) {
+    return "ok";
+  }
+  if (item.configured) {
+    return "warn";
+  }
+  return "bad";
+}
+
+function renderChannelStatuses(payload) {
+  lastChannelStatuses = payload;
+  const fallback = {
+    summary: "Unknown",
+    detail: "Not checked.",
+    connected: false,
+    configured: false
+  };
+
+  const whatsapp = (payload.channels || []).find((item) => item.channel === "whatsapp") || fallback;
+  const telegram = (payload.channels || []).find((item) => item.channel === "telegram") || fallback;
+
+  setStatus(channelElements.whatsappStatus, whatsapp.summary, toneForChannel(whatsapp));
+  channelElements.whatsappDetail.textContent = whatsapp.detail || "No detail.";
+
+  setStatus(channelElements.telegramStatus, telegram.summary, toneForChannel(telegram));
+  channelElements.telegramDetail.textContent = telegram.detail || "No detail.";
+}
+
+async function refreshChannelStatuses(logMessage = false) {
+  const payload = await window.openclaw.getChannelStatuses();
+  renderChannelStatuses(payload);
+  if (logMessage) {
+    appendLog("Channels refreshed.");
+  }
+  return payload;
+}
+
+function renderModelManagementStatus(payload) {
+  lastModelStatus = payload;
+  const provider = payload.provider || "none";
+  const model = payload.model || "none";
+  modelManagementElements.current.textContent = `Current: ${provider} / ${model}`;
+  modelManagementElements.provider.value = payload.provider || "";
+  modelManagementElements.model.value = payload.model || "";
+}
+
+async function refreshModelManagementStatus(logMessage = false) {
+  const payload = await window.openclaw.getModelStatus();
+  renderModelManagementStatus(payload);
+  if (logMessage) {
+    appendLog(payload.detail);
+  }
+  return payload;
+}
+
+function renderUpdateStatus(event) {
+  lastUpdateStatus = event;
+  const parts = [event.message];
+  if (event.version) {
+    parts.push(`v${event.version}`);
+  }
+  if (typeof event.progress === "number" && event.state === "downloading") {
+    parts.push(`${event.progress}%`);
+  }
+
+  updateElements.status.textContent = parts.filter(Boolean).join(" - ");
+  const canInstall = event.state === "downloaded" && event.canInstall;
+  updateElements.install.classList.toggle("hidden", !canInstall);
+  updateElements.install.disabled = !canInstall;
+}
+
+async function refreshUpdateStatus(logMessage = false) {
+  const status = await window.openclaw.getUpdateStatus();
+  renderUpdateStatus(status);
+  if (logMessage) {
+    appendLog(`Update: ${status.message}`);
+  }
+  return status;
+}
+
 function applyActionAvailability(status, setupState) {
   if (!status) {
     return;
@@ -502,6 +657,34 @@ async function runEnvironmentCheck() {
   const status = await window.openclaw.getEnvironmentStatus();
   renderEnvironment(status);
   await refreshAlwaysOnGatewayStatus();
+  if (status.openClawInstalled) {
+    try {
+      await refreshChannelStatuses();
+    } catch (error) {
+      appendLog(`Channel status check failed: ${formatError(error)}`);
+    }
+
+    try {
+      await refreshModelManagementStatus();
+    } catch (error) {
+      appendLog(`Model status check failed: ${formatError(error)}`);
+    }
+  } else {
+    renderChannelStatuses({
+      checkedAt: new Date().toISOString(),
+      channels: [
+        { channel: "whatsapp", configured: false, connected: false, summary: "Unavailable", detail: "Install OpenClaw first." },
+        { channel: "telegram", configured: false, connected: false, summary: "Unavailable", detail: "Install OpenClaw first." }
+      ]
+    });
+    renderModelManagementStatus({
+      checkedAt: new Date().toISOString(),
+      provider: "",
+      model: "",
+      availableProviders: [],
+      detail: "Install OpenClaw first."
+    });
+  }
   appendLog("Environment checks completed.");
 }
 
@@ -2048,6 +2231,76 @@ async function openControlWorkspace() {
   updateControlSurface();
 }
 
+async function reconnectChannel(channel) {
+  try {
+    const status = await window.openclaw.reconnectChannel(channel);
+    appendLog(`${channel} reconnect requested.`);
+    await refreshChannelStatuses();
+    return status;
+  } catch (error) {
+    appendLog(`${channel} reconnect command failed: ${formatError(error)}`);
+    if (!wizardSessionId) {
+      appendLog("Opening onboarding wizard for guided reconnect.");
+      await startWizard();
+    }
+    return null;
+  }
+}
+
+async function disableChannel(channel) {
+  const status = await window.openclaw.disableChannel(channel);
+  appendLog(`${channel} disabled.`);
+  await refreshChannelStatuses();
+  return status;
+}
+
+async function applyManagedModelSelection() {
+  const provider = modelManagementElements.provider.value.trim();
+  const model = modelManagementElements.model.value.trim();
+
+  if (!provider || !model) {
+    appendLog("Model apply failed: provider/model required.");
+    return;
+  }
+
+  const status = await window.openclaw.applyModelSelection(provider, model);
+  renderModelManagementStatus(status);
+  byId("modelProvider").value = provider;
+  byId("modelName").value = model;
+  appendLog(`Model applied: ${provider} / ${model}`);
+}
+
+async function checkForUpdatesNow() {
+  const status = await window.openclaw.checkForUpdates();
+  renderUpdateStatus(status);
+  appendLog(`Update: ${status.message}`);
+}
+
+async function installUpdateNow() {
+  if (!lastUpdateStatus || lastUpdateStatus.state !== "downloaded") {
+    appendLog("No downloaded update ready.");
+    return;
+  }
+
+  appendLog("Installing update and restarting app...");
+  await window.openclaw.installDownloadedUpdate();
+}
+
+async function saveTelegramHelperToken() {
+  const token = telegramHelperElements.token.value.trim();
+  const validation = validateTelegramHelperToken(token);
+  if (validation) {
+    setTelegramHelperValidation(validation);
+    appendLog(`Telegram helper: ${validation}`);
+    return;
+  }
+
+  setTelegramHelperValidation("");
+  await window.openclaw.configureTelegramBot(token);
+  appendLog("Telegram token saved.");
+  await refreshChannelStatuses();
+}
+
 function wireControlEvents() {
   controlWebview.addEventListener("dom-ready", () => {
     if (controlWebview.getAttribute("src") === CONTROL_UI_URL) {
@@ -2196,6 +2449,95 @@ function wireActions() {
     await withBusy(button, saveConfig);
   });
 
+  channelElements.refresh.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await refreshChannelStatuses(true);
+    });
+  });
+
+  channelElements.whatsappReconnect.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await reconnectChannel("whatsapp");
+    });
+  });
+
+  channelElements.whatsappDisable.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await disableChannel("whatsapp");
+    });
+  });
+
+  channelElements.telegramReconnect.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await reconnectChannel("telegram");
+    });
+  });
+
+  channelElements.telegramDisable.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await disableChannel("telegram");
+    });
+  });
+
+  modelManagementElements.refresh.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await refreshModelManagementStatus(true);
+    });
+  });
+
+  modelManagementElements.apply.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, applyManagedModelSelection);
+  });
+
+  updateElements.check.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, checkForUpdatesNow);
+  });
+
+  updateElements.install.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, installUpdateNow);
+  });
+
+  telegramHelperElements.startReconnect.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await reconnectChannel("telegram");
+    });
+  });
+
+  telegramHelperElements.copyBotFather.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await copyToClipboard("https://t.me/BotFather", "Copied @BotFather link.");
+    });
+  });
+
+  telegramHelperElements.copyNewBot.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await copyToClipboard("/newbot", "Copied /newbot.");
+    });
+  });
+
+  telegramHelperElements.saveToken.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, saveTelegramHelperToken);
+  });
+
+  telegramHelperElements.token.addEventListener("input", () => {
+    const token = telegramHelperElements.token.value.trim();
+    const validation = token ? validateTelegramHelperToken(token) : "";
+    setTelegramHelperValidation(validation);
+  });
+
   alwaysOnElements.toggle.addEventListener("change", async () => {
     const requested = alwaysOnElements.toggle.checked;
     const previous = Boolean(lastAlwaysOnGatewayStatus && lastAlwaysOnGatewayStatus.enabled);
@@ -2286,17 +2628,38 @@ async function bootstrap() {
     removeSetupProgressListener = window.openclaw.onSetupProgress((event) => {
       renderSetupProgressEvent(event);
     });
+    removeUpdateStatusListener = window.openclaw.onUpdateStatus((event) => {
+      renderUpdateStatus(event);
+      if (event.state === "downloading") {
+        const bucket = Math.floor((event.progress || 0) / 20);
+        if (bucket > lastUpdateLoggedProgressBucket) {
+          appendLog(`Update: ${event.message} ${event.progress || 0}%`);
+          lastUpdateLoggedProgressBucket = bucket;
+        }
+        return;
+      }
+
+      const key = `${event.state}:${event.message}`;
+      if (key !== lastUpdateLogKey) {
+        appendLog(`Update: ${event.message}`);
+        lastUpdateLogKey = key;
+      }
+    });
 
     window.addEventListener("beforeunload", () => {
       stopWizardStatusPolling();
       if (typeof removeSetupProgressListener === "function") {
         removeSetupProgressListener();
       }
+      if (typeof removeUpdateStatusListener === "function") {
+        removeUpdateStatusListener();
+      }
     });
 
     wireControlEvents();
     wireActions();
     resetWizardUi();
+    await refreshUpdateStatus();
     await loadConfig();
     await refreshSetupState(true);
     await runEnvironmentCheck();

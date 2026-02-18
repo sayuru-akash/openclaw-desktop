@@ -103,6 +103,48 @@ export interface AlwaysOnGatewayStatus {
   detail: string;
 }
 
+export type ManagedChannel = "whatsapp" | "telegram";
+
+export interface ChannelStatusItem {
+  channel: ManagedChannel;
+  configured: boolean;
+  connected: boolean;
+  summary: string;
+  detail: string;
+}
+
+export interface ChannelStatusResult {
+  checkedAt: string;
+  channels: ChannelStatusItem[];
+}
+
+export interface ModelStatusResult {
+  checkedAt: string;
+  provider: string;
+  model: string;
+  availableProviders: string[];
+  detail: string;
+}
+
+export type UpdateState =
+  | "idle"
+  | "checking"
+  | "available"
+  | "not_available"
+  | "downloading"
+  | "downloaded"
+  | "error"
+  | "unsupported";
+
+export interface UpdateStatusEvent {
+  checkedAt: string;
+  state: UpdateState;
+  message: string;
+  version?: string;
+  progress?: number;
+  canInstall: boolean;
+}
+
 export interface AppConfig {
   profileName: string;
   workspacePath: string;
@@ -116,6 +158,16 @@ export interface RendererApi {
   getEnvironmentStatus: () => Promise<EnvironmentStatus>;
   getAlwaysOnGatewayStatus: () => Promise<AlwaysOnGatewayStatus>;
   setAlwaysOnGatewayEnabled: (enabled: boolean) => Promise<AlwaysOnGatewayStatus>;
+  getChannelStatuses: () => Promise<ChannelStatusResult>;
+  reconnectChannel: (channel: ManagedChannel) => Promise<ChannelStatusItem>;
+  disableChannel: (channel: ManagedChannel) => Promise<ChannelStatusItem>;
+  configureTelegramBot: (token: string) => Promise<ChannelStatusItem>;
+  getModelStatus: () => Promise<ModelStatusResult>;
+  applyModelSelection: (provider: string, model: string) => Promise<ModelStatusResult>;
+  getUpdateStatus: () => Promise<UpdateStatusEvent>;
+  checkForUpdates: () => Promise<UpdateStatusEvent>;
+  installDownloadedUpdate: () => Promise<void>;
+  onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
   installWsl: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
   runOnboarding: () => Promise<CommandResult>;

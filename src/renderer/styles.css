@@ -115,6 +115,16 @@ body {
   gap: 0.55rem;
 }
 
+.management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.management-card {
+  min-height: 100%;
+}
+
 .status-card {
   padding: 0.58rem 0.62rem;
   border-radius: 10px;
@@ -149,6 +159,11 @@ body {
   gap: 0.45rem;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 0.72rem;
+}
+
+.compact-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.55rem;
 }
 
 .control-actions {
@@ -187,6 +202,23 @@ body {
 
 .notes {
   margin-top: 0.88rem;
+}
+
+.telegram-helper {
+  border: 1px solid #253447;
+  border-radius: 10px;
+  background: #0d1520;
+  padding: 0.58rem;
+}
+
+.helper-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .notes h3 {
@@ -683,5 +715,9 @@ input[type="text"]:focus,
 
   .status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .management-grid {
+    grid-template-columns: 1fr;
   }
 }

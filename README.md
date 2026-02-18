@@ -19,7 +19,12 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
   - Auto-progress model checklist (`Provider -> Model -> Credential`) with current selection summary
   - Automatic handoff from setup to embedded in-app Control UI when gateway is healthy
   - Tray support with close-to-tray behavior on Windows (app keeps running unless user selects Quit)
+  - Tray gateway controls (`Status`, `Start Gateway`, `Stop Gateway`)
   - Always-on gateway toggle backed by Windows Task Scheduler (`ONLOGON` task)
+  - Channel management after onboarding (WhatsApp/Telegram status, reconnect, disable)
+  - Model management after onboarding (change provider/model without full onboarding rerun)
+  - Guided Telegram helper UX with BotFather copy actions and token validation
+  - Auto-update checks with background download and install-on-restart flow
   - Install WSL with UAC elevation (`Start-Process wsl.exe -Verb RunAs`)
   - Persist setup state and resume after reboot
   - Install OpenClaw in WSL (`curl -fsSL https://openclaw.ai/install.sh | bash`)
@@ -53,6 +58,12 @@ Build renderer + main process:
 npm run build
 ```
 
+Run unit tests:
+
+```bash
+npm test
+```
+
 Build Windows installer (NSIS):
 
 ```bash
@@ -69,5 +80,7 @@ npm run dist
 - App can trigger restart directly (`shutdown.exe /r /t 5`) from the setup UI.
 - Control UI is shown inside the app using an embedded webview pointed at local `http://127.0.0.1:18789/`.
 - If gateway is unavailable, app falls back to setup workspace with retry actions (`Start Gateway + Retry`).
+- Auto-update checks require a configured publish feed in packaged builds.
 - This MCP intentionally keeps one path only: local WSL-based setup.
 - Remote/fallback modes are intentionally not included yet.
+- Windows compatibility target: Windows 10 build 19041+ and Windows 11.

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Desktop - One Install. Zero Terminal.</title>
+    <meta
+      name="description"
+      content="OpenClaw Desktop is the easiest way to run OpenClaw on Windows with guided setup, channel onboarding, and background gateway controls."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-bg" aria-hidden="true"></div>
+    <header class="shell">
+      <nav class="top-nav">
+        <a href="#" class="brand">
+          <span class="brand-dot"></span>
+          <span>OpenClaw Desktop</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how">How It Works</a>
+          <a href="#download">Download</a>
+        </div>
+        <a class="button ghost" href="#download">Get App</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero shell">
+        <p class="hero-tag reveal">Windows-first OpenClaw</p>
+        <h1 class="reveal">Run OpenClaw on Windows in minutes.</h1>
+        <p class="hero-copy reveal">
+          Install once, follow a guided flow, and start using OpenClaw without npm commands, manual config files, or
+          separate browser setup.
+        </p>
+        <div class="hero-cta reveal">
+          <a class="button primary" href="./downloads/OpenClawDesktopSetup.exe" download>Download for Windows</a>
+          <a class="button soft" href="#how">See Setup Flow</a>
+        </div>
+        <p class="micro-note reveal">Supports Windows 10 (19041+) and Windows 11</p>
+
+        <div class="product-preview reveal">
+          <div class="preview-top">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <p>OpenClaw Desktop</p>
+          </div>
+          <div class="preview-grid">
+            <article>
+              <h3>1. Install</h3>
+              <p>WSL + OpenClaw setup is automated.</p>
+            </article>
+            <article>
+              <h3>2. Onboard</h3>
+              <p>Provider, model, WhatsApp, Telegram.</p>
+            </article>
+            <article>
+              <h3>3. Run</h3>
+              <p>Gateway controls in-app and from tray.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="shell section">
+        <div class="section-head reveal">
+          <p class="eyebrow">Features</p>
+          <h2>Everything needed for day-one users.</h2>
+        </div>
+        <div class="card-grid">
+          <article class="feature-card reveal">
+            <h3>Guided Windows Setup</h3>
+            <p>Installs WSL, handles reboot-resume, and starts OpenClaw automatically.</p>
+          </article>
+          <article class="feature-card reveal">
+            <h3>In-App Onboarding</h3>
+            <p>Complete provider, model, and channel setup from a clean step-by-step UI.</p>
+          </article>
+          <article class="feature-card reveal">
+            <h3>Channel Controls</h3>
+            <p>View WhatsApp/Telegram status, reconnect channels, or disable them in one place.</p>
+          </article>
+          <article class="feature-card reveal">
+            <h3>Model Management</h3>
+            <p>Change provider/model anytime without rerunning full onboarding.</p>
+          </article>
+          <article class="feature-card reveal">
+            <h3>Background Runtime</h3>
+            <p>Tray actions for Start, Stop, and Status. Optional always-on at Windows sign-in.</p>
+          </article>
+          <article class="feature-card reveal">
+            <h3>Update Ready</h3>
+            <p>Built for in-app update checks with minimal install-and-restart flow.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="shell section compare-wrap">
+        <div class="section-head reveal">
+          <p class="eyebrow">Why This</p>
+          <h2>Skip setup friction.</h2>
+        </div>
+        <div class="compare-grid">
+          <article class="compare-card reveal">
+            <h3>Manual Path</h3>
+            <ul>
+              <li>Install Node/npm</li>
+              <li>Run CLI commands</li>
+              <li>Edit JSON config manually</li>
+              <li>Manage gateway process yourself</li>
+            </ul>
+          </article>
+          <article class="compare-card active reveal">
+            <h3>OpenClaw Desktop</h3>
+            <ul>
+              <li>Install one `.exe`</li>
+              <li>Follow guided onboarding</li>
+              <li>Use visual settings pages</li>
+              <li>Control gateway from UI/tray</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="how" class="shell section">
+        <div class="section-head reveal">
+          <p class="eyebrow">How It Works</p>
+          <h2>Fast path from install to running.</h2>
+        </div>
+        <div class="steps">
+          <article class="step reveal">
+            <span>01</span>
+            <h3>Install App</h3>
+            <p>Launch the installer and open the desktop app.</p>
+          </article>
+          <article class="step reveal">
+            <span>02</span>
+            <h3>Finish Onboarding</h3>
+            <p>Pick provider/model, connect channels, save credentials.</p>
+          </article>
+          <article class="step reveal">
+            <span>03</span>
+            <h3>Go Live</h3>
+            <p>Use in-app Control workspace and tray runtime controls.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="download" class="shell section final-cta reveal">
+        <p class="eyebrow">Download</p>
+        <h2>Get OpenClaw Desktop for Windows.</h2>
+        <p>Single installer. Guided setup. Production-ready workflow.</p>
+        <div class="hero-cta">
+          <a class="button primary" href="./downloads/OpenClawDesktopSetup.exe" download>Download `.exe`</a>
+        </div>
+        <small>Installer file path: <code>/downloads/OpenClawDesktopSetup.exe</code></small>
+      </section>
+    </main>
+
+    <footer class="shell footer">
+      <p>© <span id="year"></span> OpenClaw Desktop</p>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

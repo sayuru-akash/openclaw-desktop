@@ -231,6 +231,94 @@
             </p>
           </form>
 
+          <div class="divider"></div>
+
+          <div class="panel-header">
+            <h2>Updates</h2>
+            <button id="updateCheckButton" class="button">Check</button>
+          </div>
+          <p id="updateStatusText" class="panel-caption">Idle</p>
+          <div class="actions">
+            <button id="updateInstallButton" class="button hidden">Install + Restart</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="panel-header">
+            <h2>Channels</h2>
+            <button id="channelsRefreshButton" class="button">Refresh</button>
+          </div>
+          <div class="management-grid">
+            <article class="status-card management-card">
+              <h3>WhatsApp</h3>
+              <p id="whatsappChannelStatus">Unknown</p>
+              <p id="whatsappChannelDetail" class="panel-caption">Not checked.</p>
+              <div class="actions compact-actions">
+                <button id="whatsappReconnectButton" class="button">Reconnect</button>
+                <button id="whatsappDisableButton" class="button">Disable</button>
+              </div>
+            </article>
+            <article class="status-card management-card">
+              <h3>Telegram</h3>
+              <p id="telegramChannelStatus">Unknown</p>
+              <p id="telegramChannelDetail" class="panel-caption">Not checked.</p>
+              <div class="actions compact-actions">
+                <button id="telegramReconnectButton" class="button">Reconnect</button>
+                <button id="telegramDisableButton" class="button">Disable</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="panel-header">
+            <h2>Model</h2>
+            <button id="modelRefreshButton" class="button">Refresh</button>
+          </div>
+          <p id="modelCurrentStatus" class="panel-caption">Not checked.</p>
+          <form id="modelManageForm" class="form" autocomplete="off">
+            <label>
+              Provider
+              <input id="manageModelProvider" type="text" placeholder="openai" />
+            </label>
+            <label>
+              Model
+              <input id="manageModelName" type="text" placeholder="gpt-4o-mini" />
+            </label>
+            <div class="actions compact-actions">
+              <button id="modelApplyButton" type="button" class="button primary">Apply Model</button>
+            </div>
+          </form>
+
+          <div class="divider"></div>
+
+          <div class="panel-header">
+            <h2>Telegram Helper</h2>
+            <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
+          </div>
+          <div class="telegram-helper">
+            <div class="helper-row">
+              <span>1. Open @BotFather</span>
+              <button id="copyBotFatherButton" class="button">Copy Link</button>
+            </div>
+            <div class="helper-row">
+              <span>2. Run command</span>
+              <button id="copyNewBotCommandButton" class="button">Copy `/newbot`</button>
+            </div>
+            <div class="helper-row">
+              <span>3. Token format</span>
+              <span class="panel-caption">`123456789:AA...`</span>
+            </div>
+            <label>
+              Bot Token
+              <input id="telegramHelperToken" type="text" placeholder="123456789:AA..." />
+            </label>
+            <p id="telegramHelperValidation" class="wizard-validation-message hidden"></p>
+            <div class="actions compact-actions">
+              <button id="telegramHelperSaveTokenButton" class="button">Save Token</button>
+            </div>
+          </div>
+
           <div class="notes">
             <h3>Log</h3>
             <pre id="logOutput" class="log">App ready.</pre>
