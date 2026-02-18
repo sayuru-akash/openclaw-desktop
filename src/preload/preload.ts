@@ -5,6 +5,7 @@ import type {
   RendererApi,
   SetupProgressEvent,
   UpdateStatusEvent,
+  WorkspaceEditableFileName,
   WizardAnswer,
   WizardStartParams
 } from "../shared/types";
@@ -17,6 +18,10 @@ const api: RendererApi = {
   configureTelegramBot: (token: string) => ipcRenderer.invoke("telegram:configure", token),
   getModelStatus: () => ipcRenderer.invoke("models:get-status"),
   applyModelSelection: (provider: string, model: string) => ipcRenderer.invoke("models:apply", provider, model),
+  getWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName) =>
+    ipcRenderer.invoke("workspace-files:get", workspacePath, fileName),
+  saveWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName, content: string) =>
+    ipcRenderer.invoke("workspace-files:save", workspacePath, fileName, content),
   getAlwaysOnGatewayStatus: () => ipcRenderer.invoke("always-on:get-status"),
   setAlwaysOnGatewayEnabled: (enabled: boolean) => ipcRenderer.invoke("always-on:set-enabled", enabled),
   getUpdateStatus: () => ipcRenderer.invoke("update:get-status"),

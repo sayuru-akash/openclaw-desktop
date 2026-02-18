@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import path from "node:path";
-import type { ManagedChannel, SetupProgressEvent, UpdateStatusEvent } from "../shared/types";
+import type {
+  ManagedChannel,
+  SetupProgressEvent,
+  UpdateStatusEvent,
+  WorkspaceEditableFileName
+} from "../shared/types";
 import { AutoUpdaterService } from "./services/auto-updater";
 import { ConfigStore } from "./services/config-store";
 import { EnvironmentService } from "./services/environment";
@@ -8,11 +13,13 @@ import { isGatewayRunningOutput } from "./services/parsers";
 import { SetupOrchestrator } from "./services/setup-orchestrator";
 import { SetupStore } from "./services/setup-store";
 import { WindowsStartupService } from "./services/windows-startup";
+import { WorkspaceFilesService } from "./services/workspace-files";
 
 const environmentService = new EnvironmentService();
 const autoUpdaterService = new AutoUpdaterService();
 let configStore: ConfigStore;
 let setupOrchestrator: SetupOrchestrator;
+const workspaceFilesService = new WorkspaceFilesService();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
@@ -274,6 +281,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle("models:get-status", () => environmentService.getModelStatus());
   ipcMain.handle("models:apply", (_event, provider: string, model: string) =>
     environmentService.applyModelSelection(provider, model)
+  );
+  ipcMain.handle("workspace-files:get", (_event, workspacePath: string, fileName: WorkspaceEditableFileName) =>
+    workspaceFilesService.getFile(workspacePath, fileName)
+  );
+  ipcMain.handle("workspace-files:save", (_event, workspacePath: string, fileName: WorkspaceEditableFileName, content: string) =>
+    workspaceFilesService.saveFile(workspacePath, fileName, content)
   );
   ipcMain.handle("always-on:get-status", () => environmentService.getAlwaysOnGatewayStatus());
   ipcMain.handle("always-on:set-enabled", (_event, enabled: boolean) =>

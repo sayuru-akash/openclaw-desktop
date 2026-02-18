@@ -264,11 +264,31 @@ input[type="text"] {
 }
 
 input[type="text"]:focus,
+select:focus,
+textarea:focus,
 .wizard-input-container input[type="text"]:focus,
 .wizard-input-container input[type="password"]:focus,
 .wizard-input-container select:focus {
   border-color: #2bbf66;
   box-shadow: 0 0 0 2px var(--brand-soft);
+}
+
+select,
+textarea {
+  border: 1px solid #283445;
+  background: #0b1119;
+  color: var(--text);
+  padding: 0.55rem;
+  border-radius: 8px;
+  outline: none;
+}
+
+.workspace-file-editor {
+  min-height: 180px;
+  resize: vertical;
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .toggle-row {

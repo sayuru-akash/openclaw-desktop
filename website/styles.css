@@ -499,6 +499,10 @@ body.modal-open {
   padding: 20px;
 }
 
+.paywall[hidden] {
+  display: none;
+}
+
 .paywall-backdrop {
   position: absolute;
   inset: 0;

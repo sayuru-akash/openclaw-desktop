@@ -126,6 +126,22 @@ export interface ModelStatusResult {
   detail: string;
 }
 
+export type WorkspaceEditableFileName =
+  | "openclaw.json"
+  | "soul.md"
+  | "skills.md"
+  | "bootstrap.md"
+  | "AGENTS.md"
+  | "HEARTBEAT.md";
+
+export interface WorkspaceFilePayload {
+  fileName: WorkspaceEditableFileName;
+  path: string;
+  exists: boolean;
+  content: string;
+  updatedAt: string;
+}
+
 export type UpdateState =
   | "idle"
   | "checking"
@@ -164,6 +180,12 @@ export interface RendererApi {
   configureTelegramBot: (token: string) => Promise<ChannelStatusItem>;
   getModelStatus: () => Promise<ModelStatusResult>;
   applyModelSelection: (provider: string, model: string) => Promise<ModelStatusResult>;
+  getWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName) => Promise<WorkspaceFilePayload>;
+  saveWorkspaceFile: (
+    workspacePath: string,
+    fileName: WorkspaceEditableFileName,
+    content: string
+  ) => Promise<WorkspaceFilePayload>;
   getUpdateStatus: () => Promise<UpdateStatusEvent>;
   checkForUpdates: () => Promise<UpdateStatusEvent>;
   installDownloadedUpdate: () => Promise<void>;

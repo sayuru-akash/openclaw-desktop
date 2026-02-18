@@ -1,4 +1,5 @@
 const CONTROL_UI_URL = "http://127.0.0.1:18789/";
+const CHAT_UI_URL = CONTROL_UI_URL;
 
 const byId = (id) => {
   const element = document.getElementById(id);
@@ -33,7 +34,14 @@ const actionButtons = {
 
 const workspaceButtons = {
   showSetup: byId("showSetupButton"),
+  showChat: byId("showChatButton"),
   showControl: byId("showControlButton")
+};
+
+const chatButtons = {
+  reload: byId("reloadChatButton"),
+  retryGateway: byId("retryChatGatewayButton"),
+  openControl: byId("openControlFromChatButton")
 };
 
 const controlButtons = {
@@ -108,6 +116,15 @@ const modelManagementElements = {
   apply: byId("modelApplyButton")
 };
 
+const workspaceFileElements = {
+  select: byId("workspaceFileSelect"),
+  load: byId("workspaceFileLoadButton"),
+  save: byId("workspaceFileSaveButton"),
+  path: byId("workspaceFilePath"),
+  editor: byId("workspaceFileEditor"),
+  status: byId("workspaceFileStatus")
+};
+
 const updateElements = {
   check: byId("updateCheckButton"),
   install: byId("updateInstallButton"),
@@ -124,6 +141,10 @@ const telegramHelperElements = {
 };
 
 const setupWorkspace = byId("setupWorkspace");
+const chatWorkspace = byId("chatWorkspace");
+const chatStatus = byId("chatStatus");
+const chatFallback = byId("chatFallback");
+const chatWebview = byId("chatWebview");
 const controlWorkspace = byId("controlWorkspace");
 const controlStatus = byId("controlStatus");
 const controlFallback = byId("controlFallback");
@@ -134,11 +155,13 @@ const logOutput = byId("logOutput");
 let lastEnvironmentStatus = null;
 let lastSetupState = null;
 let activeWorkspace = "setup";
+let chatTabSelectionTimer = null;
 let removeSetupProgressListener = null;
 let removeUpdateStatusListener = null;
 let lastAlwaysOnGatewayStatus = null;
 let lastChannelStatuses = null;
 let lastModelStatus = null;
+let lastWorkspaceFilePayload = null;
 let lastUpdateStatus = null;
 let lastUpdateLogKey = "";
 let lastUpdateLoggedProgressBucket = -1;
@@ -392,21 +415,30 @@ function setupStageTone(stage) {
 
 function setWorkspace(workspace) {
   activeWorkspace = workspace;
+  const showingSetup = workspace === "setup";
+  const showingChat = workspace === "chat";
   const showingControl = workspace === "control";
 
-  setupWorkspace.classList.toggle("hidden", showingControl);
+  setupWorkspace.classList.toggle("hidden", !showingSetup);
+  chatWorkspace.classList.toggle("hidden", !showingChat);
   controlWorkspace.classList.toggle("hidden", !showingControl);
 
-  workspaceButtons.showSetup.classList.toggle("primary", !showingControl);
+  workspaceButtons.showSetup.classList.toggle("primary", showingSetup);
+  workspaceButtons.showChat.classList.toggle("primary", showingChat);
   workspaceButtons.showControl.classList.toggle("primary", showingControl);
+
+  if (!showingChat && chatTabSelectionTimer) {
+    clearTimeout(chatTabSelectionTimer);
+    chatTabSelectionTimer = null;
+  }
 }
 
-function isControlReady(status) {
+function isGatewayReady(status) {
   return Boolean(status && status.isWindows && status.openClawInstalled && status.gatewayRunning);
 }
 
 function updateControlSurface() {
-  const ready = isControlReady(lastEnvironmentStatus);
+  const ready = isGatewayReady(lastEnvironmentStatus);
 
   if (!ready) {
     controlStatus.textContent = "Gateway is not ready yet.";
@@ -429,19 +461,88 @@ function updateControlSurface() {
   }
 }
 
-function maybeAutoHandoffToControl() {
-  if (!isControlReady(lastEnvironmentStatus)) {
+function ensureChatTabSelected(attempt = 0) {
+  if (activeWorkspace !== "chat") {
+    return;
+  }
+
+  const script = `(() => {
+    const nodes = [...document.querySelectorAll('button, [role="tab"], a')];
+    const target = nodes.find((node) => {
+      const text = (node.textContent || '').trim().toLowerCase();
+      const label = (node.getAttribute('aria-label') || '').trim().toLowerCase();
+      return text === 'chat' || label === 'chat' || text.includes('chat') || label.includes('chat');
+    });
+    if (!target) return false;
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return true;
+  })();`;
+
+  chatWebview.executeJavaScript(script, true)
+    .then((found) => {
+      if (found) {
+        chatStatus.textContent = "Chat UI loaded.";
+        return;
+      }
+
+      if (attempt < 10) {
+        chatTabSelectionTimer = setTimeout(() => {
+          ensureChatTabSelected(attempt + 1);
+        }, 280);
+      }
+    })
+    .catch(() => {
+      if (attempt < 5) {
+        chatTabSelectionTimer = setTimeout(() => {
+          ensureChatTabSelected(attempt + 1);
+        }, 380);
+      }
+    });
+}
+
+function updateChatSurface(ensureChatTab = false) {
+  const ready = isGatewayReady(lastEnvironmentStatus);
+
+  if (!ready) {
+    chatStatus.textContent = "Gateway is not ready yet.";
+    chatFallback.classList.remove("hidden");
+    chatButtons.reload.disabled = true;
+    chatButtons.retryGateway.disabled = false;
+    if (chatWebview.getAttribute("src") !== "about:blank") {
+      chatWebview.setAttribute("src", "about:blank");
+    }
+    return;
+  }
+
+  chatStatus.textContent = `Connected to ${CHAT_UI_URL}`;
+  chatFallback.classList.add("hidden");
+  chatButtons.reload.disabled = false;
+  chatButtons.retryGateway.disabled = false;
+
+  if (chatWebview.getAttribute("src") !== CHAT_UI_URL) {
+    chatWebview.setAttribute("src", CHAT_UI_URL);
+  } else if (ensureChatTab) {
+    ensureChatTabSelected(0);
+  }
+}
+
+function maybeAutoHandoffToChat() {
+  if (!isGatewayReady(lastEnvironmentStatus)) {
+    if (activeWorkspace === "chat") {
+      updateChatSurface(false);
+    }
     if (activeWorkspace === "control") {
       updateControlSurface();
     }
     return;
   }
 
-  if (activeWorkspace !== "control") {
-    setWorkspace("control");
-    appendLog("Gateway is ready. Switched to in-app OpenClaw Control.");
+  if (activeWorkspace === "setup") {
+    setWorkspace("chat");
+    appendLog("Gateway is ready. Switched to in-app Chat.");
   }
 
+  updateChatSurface(activeWorkspace === "chat");
   updateControlSurface();
 }
 
@@ -461,7 +562,7 @@ function renderEnvironment(status) {
   setStatus(statusElements.gateway, status.gatewayRunning ? "Running" : "Stopped", status.gatewayRunning ? "ok" : "warn");
   renderNotes(status.notes);
   applyActionAvailability(status, lastSetupState);
-  maybeAutoHandoffToControl();
+  maybeAutoHandoffToChat();
 }
 
 function renderAlwaysOnGatewayStatus(status) {
@@ -650,6 +751,54 @@ async function saveConfig() {
   });
 
   appendLog(`Configuration saved (${config.updatedAt}).`);
+}
+
+function getWorkspacePathForEditor() {
+  const workspacePath = byId("workspacePath").value.trim();
+  if (!workspacePath) {
+    throw new Error("Set the workspace folder first in Settings.");
+  }
+
+  return workspacePath;
+}
+
+function renderWorkspaceFile(payload, actionLabel) {
+  lastWorkspaceFilePayload = payload;
+  workspaceFileElements.path.textContent = `Path: ${payload.path}`;
+  workspaceFileElements.editor.value = payload.content || "";
+
+  if (payload.exists) {
+    workspaceFileElements.status.textContent = `${actionLabel}: ${payload.fileName} loaded.`;
+  } else {
+    workspaceFileElements.status.textContent = `${actionLabel}: ${payload.fileName} does not exist yet. Save to create it.`;
+  }
+}
+
+async function loadWorkspaceFile(logMessage = false) {
+  const workspacePath = getWorkspacePathForEditor();
+  const fileName = workspaceFileElements.select.value;
+  const payload = await window.openclaw.getWorkspaceFile(workspacePath, fileName);
+  renderWorkspaceFile(payload, "Load");
+
+  if (logMessage) {
+    appendLog(`Loaded ${payload.fileName} at ${payload.path}`);
+  }
+
+  return payload;
+}
+
+async function saveWorkspaceFile(logMessage = false) {
+  const workspacePath = getWorkspacePathForEditor();
+  const fileName = workspaceFileElements.select.value;
+  const content = workspaceFileElements.editor.value;
+  const payload = await window.openclaw.saveWorkspaceFile(workspacePath, fileName, content);
+  renderWorkspaceFile(payload, "Save");
+
+  if (logMessage) {
+    appendLog(`Saved ${payload.fileName} at ${payload.path}`);
+  }
+
+  return payload;
 }
 
 async function runEnvironmentCheck() {
@@ -2231,6 +2380,13 @@ async function openControlWorkspace() {
   updateControlSurface();
 }
 
+async function openChatWorkspace() {
+  setWorkspace("chat");
+  await runEnvironmentCheck();
+  await refreshSetupState();
+  updateChatSurface(true);
+}
+
 async function reconnectChannel(channel) {
   try {
     const status = await window.openclaw.reconnectChannel(channel);
@@ -2302,6 +2458,23 @@ async function saveTelegramHelperToken() {
 }
 
 function wireControlEvents() {
+  chatWebview.addEventListener("dom-ready", () => {
+    if (chatWebview.getAttribute("src") === CHAT_UI_URL) {
+      chatStatus.textContent = "Chat UI loaded.";
+      ensureChatTabSelected(0);
+    }
+  });
+
+  chatWebview.addEventListener("did-fail-load", (event) => {
+    if (event.errorCode === -3) {
+      return;
+    }
+
+    chatStatus.textContent = "Could not load embedded Chat UI.";
+    chatFallback.classList.remove("hidden");
+    appendLog(`Chat UI load failed (${event.errorCode}): ${event.errorDescription}`);
+  });
+
   controlWebview.addEventListener("dom-ready", () => {
     if (controlWebview.getAttribute("src") === CONTROL_UI_URL) {
       controlStatus.textContent = "Control UI loaded.";
@@ -2322,6 +2495,11 @@ function wireControlEvents() {
 function wireActions() {
   workspaceButtons.showSetup.addEventListener("click", () => {
     setWorkspace("setup");
+  });
+
+  workspaceButtons.showChat.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, openChatWorkspace);
   });
 
   workspaceButtons.showControl.addEventListener("click", async (event) => {
@@ -2496,6 +2674,24 @@ function wireActions() {
     await withBusy(button, applyManagedModelSelection);
   });
 
+  workspaceFileElements.load.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await loadWorkspaceFile(true);
+    });
+  });
+
+  workspaceFileElements.save.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await saveWorkspaceFile(true);
+    });
+  });
+
+  workspaceFileElements.select.addEventListener("change", async () => {
+    workspaceFileElements.status.textContent = "Selection changed. Click Load.";
+  });
+
   updateElements.check.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, checkForUpdatesNow);
@@ -2590,6 +2786,34 @@ function wireActions() {
     setWorkspace("setup");
   });
 
+  chatButtons.reload.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      updateChatSurface(true);
+      if (chatWebview.getAttribute("src") === CHAT_UI_URL) {
+        chatWebview.reload();
+        appendLog("Reloaded embedded Chat UI.");
+      } else {
+        appendLog("Chat UI not loaded because gateway is not ready.");
+      }
+    });
+  });
+
+  chatButtons.retryGateway.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      appendLog("Starting gateway and retrying embedded Chat UI...");
+      const result = await window.openclaw.gatewayStart();
+      summarizeCommandResult("Gateway start", result);
+      await openChatWorkspace();
+    });
+  });
+
+  chatButtons.openControl.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, openControlWorkspace);
+  });
+
   wizardElements.start.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, startWizard);
@@ -2648,6 +2872,9 @@ async function bootstrap() {
 
     window.addEventListener("beforeunload", () => {
       stopWizardStatusPolling();
+      if (chatTabSelectionTimer) {
+        clearTimeout(chatTabSelectionTimer);
+      }
       if (typeof removeSetupProgressListener === "function") {
         removeSetupProgressListener();
       }
@@ -2664,7 +2891,7 @@ async function bootstrap() {
     await refreshSetupState(true);
     await runEnvironmentCheck();
     setWorkspace("setup");
-    maybeAutoHandoffToControl();
+    maybeAutoHandoffToChat();
   } catch (error) {
     appendLog(`Bootstrap error: ${formatError(error)}`);
   }

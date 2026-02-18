@@ -18,11 +18,13 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
   - Auto-progress Telegram bot checklist (`BotFather -> token -> destination -> validate`)
   - Auto-progress model checklist (`Provider -> Model -> Credential`) with current selection summary
   - Automatic handoff from setup to embedded in-app Control UI when gateway is healthy
+  - Dedicated in-app Chat workspace (streaming chat via embedded OpenClaw WebChat view)
   - Tray support with close-to-tray behavior on Windows (app keeps running unless user selects Quit)
   - Tray gateway controls (`Status`, `Start Gateway`, `Stop Gateway`)
   - Always-on gateway toggle backed by Windows Task Scheduler (`ONLOGON` task)
   - Channel management after onboarding (WhatsApp/Telegram status, reconnect, disable)
   - Model management after onboarding (change provider/model without full onboarding rerun)
+  - In-app workspace file editor for `openclaw.json`, `soul.md`, `skills.md`, `bootstrap.md`, `AGENTS.md`, and `HEARTBEAT.md`
   - Guided Telegram helper UX with BotFather copy actions and token validation
   - Auto-update checks with background download and install-on-restart flow
   - Install WSL with UAC elevation (`Start-Process wsl.exe -Verb RunAs`)

@@ -13,8 +13,9 @@
         <h1>Setup. Connect. Run.</h1>
         <p class="subhead">No terminal. Just click through.</p>
         <div class="workspace-switcher">
-          <button id="showSetupButton" class="button">Setup</button>
-          <button id="showControlButton" class="button primary">Control</button>
+          <button id="showSetupButton" class="button primary">Setup</button>
+          <button id="showChatButton" class="button">Chat</button>
+          <button id="showControlButton" class="button">Control</button>
         </div>
       </header>
 
@@ -293,6 +294,35 @@
           <div class="divider"></div>
 
           <div class="panel-header">
+            <h2>Files</h2>
+            <button id="workspaceFileLoadButton" class="button">Load</button>
+          </div>
+          <form id="workspaceFileForm" class="form" autocomplete="off">
+            <label>
+              OpenClaw File
+              <select id="workspaceFileSelect">
+                <option value="openclaw.json">openclaw.json</option>
+                <option value="soul.md">soul.md</option>
+                <option value="skills.md">skills.md</option>
+                <option value="bootstrap.md">bootstrap.md</option>
+                <option value="AGENTS.md">AGENTS.md</option>
+                <option value="HEARTBEAT.md">HEARTBEAT.md</option>
+              </select>
+            </label>
+            <p id="workspaceFilePath" class="panel-caption">Path: not loaded.</p>
+            <label>
+              Content
+              <textarea id="workspaceFileEditor" class="workspace-file-editor" placeholder="Load a file to edit."></textarea>
+            </label>
+            <div class="actions compact-actions">
+              <button id="workspaceFileSaveButton" type="button" class="button primary">Save File</button>
+            </div>
+            <p id="workspaceFileStatus" class="panel-caption">Select a file and click Load.</p>
+          </form>
+
+          <div class="divider"></div>
+
+          <div class="panel-header">
             <h2>Telegram Helper</h2>
             <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
           </div>
@@ -323,6 +353,36 @@
             <h3>Log</h3>
             <pre id="logOutput" class="log">App ready.</pre>
           </div>
+        </section>
+      </main>
+
+      <main id="chatWorkspace" class="control-workspace hidden">
+        <section class="panel control-panel">
+          <div class="panel-header">
+            <h2>Chat</h2>
+            <span class="panel-caption">Streamed replies</span>
+          </div>
+
+          <div class="actions control-actions">
+            <button id="reloadChatButton" class="button">Reload</button>
+            <button id="retryChatGatewayButton" class="button">Start + Retry</button>
+            <button id="openControlFromChatButton" class="button">Open Full Control</button>
+          </div>
+
+          <div class="control-status-wrap">
+            <p id="chatStatus" class="control-status">Waiting for gateway readiness check...</p>
+            <p id="chatFallback" class="control-fallback hidden">
+              Gateway is not ready. Start + Retry.
+            </p>
+          </div>
+
+          <webview
+            id="chatWebview"
+            class="control-webview"
+            src="about:blank"
+            allowpopups="false"
+            partition="persist:openclaw-control"
+          ></webview>
         </section>
       </main>
 

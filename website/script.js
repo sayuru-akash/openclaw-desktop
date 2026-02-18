@@ -43,6 +43,7 @@ const openPaywall = () => {
   }
 
   paywallNode.hidden = false;
+  paywallNode.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
 
   if (paywallEmail) {
@@ -56,8 +57,14 @@ const closePaywall = () => {
   }
 
   paywallNode.hidden = true;
+  paywallNode.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
 };
+
+if (paywallNode) {
+  // Never show paywall on initial page load.
+  closePaywall();
+}
 
 openPaywallButtons.forEach((button) => {
   button.addEventListener("click", openPaywall);
