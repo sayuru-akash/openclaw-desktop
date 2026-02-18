@@ -6,15 +6,29 @@ Static marketing site for OpenClaw Desktop.
 
 Open `/Users/hithesh/Documents/openclaw-desktop/website/index.html` in a browser.
 
-## Download file
+## Polar paywall setup
 
-The main CTA points to:
+The website now uses a Polar checkout paywall.
 
-`/downloads/OpenClawDesktopSetup.exe`
+Update `/Users/hithesh/Documents/openclaw-desktop/website/config.js`:
 
-Place your signed installer at:
+1. Set `polarCheckoutUrl` to your Polar Checkout Link URL.
+2. Set `polarPortalUrl` to your Polar customer portal URL.
+3. Keep price copy aligned with your Polar product price (`appPriceLabel`).
 
-`/Users/hithesh/Documents/openclaw-desktop/website/downloads/OpenClawDesktopSetup.exe`
+Example:
+
+`https://polar.sh/your-org/your-checkout-link`
+
+## Installer delivery
+
+Do not expose a direct public `.exe` URL if you want a strict paywall.
+
+Preferred approach:
+
+1. Upload installer as a Polar digital download benefit for the paid product.
+2. Let users retrieve the file from Polar's post-purchase flow / customer portal.
+3. Configure Polar checkout success redirect back to this site if needed.
 
 ## GitHub Pages deploy
 

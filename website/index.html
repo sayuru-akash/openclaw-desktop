@@ -8,6 +8,8 @@
       name="description"
       content="OpenClaw Desktop is the easiest way to run OpenClaw on Windows with guided setup, channel onboarding, and background gateway controls."
     />
+    <meta name="theme-color" content="#0f4da8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,7 +23,7 @@
     <header class="shell">
       <nav class="top-nav">
         <a href="#" class="brand">
-          <span class="brand-dot"></span>
+          <span class="brand-mark" aria-hidden="true">🦀+🖥️</span>
           <span>OpenClaw Desktop</span>
         </a>
         <div class="nav-links">
@@ -29,7 +31,7 @@
           <a href="#how">How It Works</a>
           <a href="#download">Download</a>
         </div>
-        <a class="button ghost" href="#download">Get App</a>
+        <button class="button ghost" type="button" data-open-paywall>Get App</button>
       </nav>
     </header>
 
@@ -42,7 +44,7 @@
           separate browser setup.
         </p>
         <div class="hero-cta reveal">
-          <a class="button primary" href="./downloads/OpenClawDesktopSetup.exe" download>Download for Windows</a>
+          <button class="button primary" type="button" data-open-paywall>Pay $5 and Download</button>
           <a class="button soft" href="#how">See Setup Flow</a>
         </div>
         <p class="micro-note reveal">Supports Windows 10 (19041+) and Windows 11</p>
@@ -107,26 +109,44 @@
       <section class="shell section compare-wrap">
         <div class="section-head reveal">
           <p class="eyebrow">Why This</p>
-          <h2>Skip setup friction.</h2>
+          <h2>From setup stress to one clean flow.</h2>
         </div>
-        <div class="compare-grid">
-          <article class="compare-card reveal">
-            <h3>Manual Path</h3>
-            <ul>
-              <li>Install Node/npm</li>
-              <li>Run CLI commands</li>
-              <li>Edit JSON config manually</li>
-              <li>Manage gateway process yourself</li>
-            </ul>
+        <div class="compare-stage reveal">
+          <article class="compare-panel before">
+            <p class="panel-badge">Manual path</p>
+            <h3>What users struggle with</h3>
+            <div class="panel-list">
+              <p>Install Node/npm and WSL by hand</p>
+              <p>Run terminal commands in the right order</p>
+              <p>Edit `openclaw.json` safely</p>
+              <p>Keep gateway alive manually</p>
+            </div>
+            <small>Usually 45 to 90 minutes for first-time users</small>
           </article>
-          <article class="compare-card active reveal">
-            <h3>OpenClaw Desktop</h3>
-            <ul>
-              <li>Install one `.exe`</li>
-              <li>Follow guided onboarding</li>
-              <li>Use visual settings pages</li>
-              <li>Control gateway from UI/tray</li>
-            </ul>
+          <article class="compare-panel after">
+            <p class="panel-badge">OpenClaw Desktop</p>
+            <h3>What they get instead</h3>
+            <div class="panel-list">
+              <p>Install one `.exe` and start</p>
+              <p>Guided onboarding in a native UI</p>
+              <p>Visual model and channel management</p>
+              <p>Tray-based always-on controls</p>
+            </div>
+            <small>Typical first run to live gateway in about 10 minutes</small>
+          </article>
+        </div>
+        <div class="compare-metrics reveal">
+          <article>
+            <strong>~10 min</strong>
+            <p>Install to ready</p>
+          </article>
+          <article>
+            <strong>0 terminal</strong>
+            <p>For day-one setup</p>
+          </article>
+          <article>
+            <strong>2 channels</strong>
+            <p>WhatsApp + Telegram guided</p>
           </article>
         </div>
       </section>
@@ -158,11 +178,11 @@
       <section id="download" class="shell section final-cta reveal">
         <p class="eyebrow">Download</p>
         <h2>Get OpenClaw Desktop for Windows.</h2>
-        <p>Single installer. Guided setup. Production-ready workflow.</p>
+        <p>Single installer. Guided setup. Secure checkout with Polar.</p>
         <div class="hero-cta">
-          <a class="button primary" href="./downloads/OpenClawDesktopSetup.exe" download>Download `.exe`</a>
+          <button class="button primary" type="button" data-open-paywall>Pay $5 and Download</button>
         </div>
-        <small>Installer file path: <code>/downloads/OpenClawDesktopSetup.exe</code></small>
+        <small>Checkout runs on Polar. Download is unlocked after payment.</small>
       </section>
     </main>
 
@@ -170,6 +190,27 @@
       <p>© <span id="year"></span> OpenClaw Desktop</p>
     </footer>
 
+    <div class="paywall" id="paywall" hidden>
+      <div class="paywall-backdrop" data-close-paywall aria-hidden="true"></div>
+      <section class="paywall-card" role="dialog" aria-modal="true" aria-labelledby="paywall-title">
+        <button class="paywall-close" type="button" data-close-paywall aria-label="Close">×</button>
+        <p class="eyebrow">Checkout</p>
+        <h3 id="paywall-title">Pay $5 and Download</h3>
+        <p class="paywall-copy">Enter your email. We open Polar checkout next.</p>
+        <form id="paywall-form" novalidate>
+          <label for="paywall-email">Email</label>
+          <input id="paywall-email" name="email" type="email" autocomplete="email" required />
+          <p class="form-error" id="paywall-error" role="status" aria-live="polite"></p>
+          <button class="button primary paywall-submit" type="submit">Continue to checkout</button>
+        </form>
+        <p class="paywall-note">
+          After payment, access your installer from
+          <a id="paywall-portal-link" href="#" target="_blank" rel="noreferrer">Polar customer portal</a>.
+        </p>
+      </section>
+    </div>
+
+    <script src="./config.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>
