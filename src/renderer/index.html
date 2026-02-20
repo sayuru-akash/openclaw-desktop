@@ -10,24 +10,99 @@
     <div class="layout">
       <header class="hero">
         <p class="eyebrow">OpenClaw Desktop</p>
-        <h1>Setup. Connect. Run.</h1>
-        <p class="subhead">No terminal. Just click through.</p>
+        <h1>Control Center</h1>
+        <p class="subhead">Chat in the center. Configure from the side.</p>
         <div class="workspace-switcher">
-          <button id="showSetupButton" class="button primary">Setup</button>
-          <button id="showChatButton" class="button">Chat</button>
+          <button id="showChatButton" class="button primary">Chat</button>
+          <button id="showSetupButton" class="button">Setup</button>
           <button id="showControlButton" class="button">Control</button>
         </div>
         <div class="feature-switcher">
-          <p class="subhead">Feature Menu</p>
-          <button class="button feature-nav-button primary" data-feature-pane-target="onboarding">Onboarding</button>
-          <button class="button feature-nav-button" data-feature-pane-target="settings">Settings</button>
+          <p class="subhead">Menu</p>
+          <button class="button feature-nav-button" data-feature-pane-target="onboarding">Onboarding</button>
           <button class="button feature-nav-button" data-feature-pane-target="channels">Channels</button>
-          <button class="button feature-nav-button" data-feature-pane-target="model">Model</button>
+          <button class="button feature-nav-button" data-feature-pane-target="model">Models</button>
           <button class="button feature-nav-button" data-feature-pane-target="files">Files</button>
+          <button class="button feature-nav-button" data-feature-pane-target="settings">Settings</button>
           <button class="button feature-nav-button" data-feature-pane-target="updates">Updates</button>
           <button class="button feature-nav-button" data-feature-pane-target="logs">Logs</button>
         </div>
       </header>
+
+      <aside class="status-rail">
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <h2>System</h2>
+            <button id="checkEnvButton" class="button">Refresh</button>
+          </div>
+
+          <div class="status-grid">
+            <article class="status-card">
+              <h3>Platform</h3>
+              <p id="platformValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>WSL</h3>
+              <p id="wslValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Distro</h3>
+              <p id="distroValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>systemd</h3>
+              <p id="systemdValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>OpenClaw</h3>
+              <p id="openClawValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Gateway</h3>
+              <p id="gatewayValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Stage</h3>
+              <p id="setupStageValue">Pending</p>
+            </article>
+            <article class="status-card">
+              <h3>Always On</h3>
+              <p id="alwaysOnGatewayValue">Pending</p>
+            </article>
+          </div>
+
+          <div class="divider"></div>
+          <p class="panel-caption command-caption">Quick Actions</p>
+          <div class="actions compact-actions">
+            <button id="guidedSetupButton" class="button primary">Quick Setup</button>
+            <button id="installWslButton" class="button">Install WSL</button>
+            <button id="installOpenClawButton" class="button">Install OpenClaw</button>
+            <button id="runOnboardingButton" class="button">CLI Onboard</button>
+          </div>
+          <div class="actions compact-actions">
+            <button id="gatewayStartButton" class="button">Start Gateway</button>
+            <button id="gatewayStopButton" class="button">Stop Gateway</button>
+            <button id="gatewayStatusButton" class="button">Gateway Status</button>
+            <button id="resumeSetupButton" class="button">Resume Setup</button>
+          </div>
+          <div class="actions compact-actions">
+            <button id="restartNowButton" class="button">Restart Windows</button>
+          </div>
+
+          <div class="divider"></div>
+          <div class="notes">
+            <h3>Notes</h3>
+            <ul id="notesList"></ul>
+          </div>
+
+          <div class="divider"></div>
+          <div class="panel-header compact-header">
+            <h2>Live Log</h2>
+            <span class="panel-caption">Non-blocking</span>
+          </div>
+          <pre id="logOutput" class="log">App ready.</pre>
+        </section>
+      </aside>
 
       <main id="onboardingWorkspace" class="onboarding-workspace hidden">
         <section class="panel onboarding-panel">
@@ -95,11 +170,15 @@
             <form id="onboardingModelForm" class="form" autocomplete="off">
               <label>
                 Provider
-                <input id="onboardingModelProvider" type="text" placeholder="openai" />
+                <select id="onboardingModelProvider">
+                  <option value="">Select provider</option>
+                </select>
               </label>
               <label>
                 Model
-                <input id="onboardingModelName" type="text" placeholder="gpt-4o-mini" />
+                <select id="onboardingModelName">
+                  <option value="">Select model</option>
+                </select>
               </label>
               <label>
                 API Key
@@ -133,74 +212,8 @@
         </section>
       </main>
 
-      <main id="setupWorkspace" class="grid">
-        <section class="panel">
-          <div class="panel-header">
-            <h2>Setup</h2>
-            <span class="panel-caption">Install + start</span>
-          </div>
-
-          <div class="status-grid">
-            <article class="status-card">
-              <h3>Platform</h3>
-              <p id="platformValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>WSL</h3>
-              <p id="wslValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>Distro</h3>
-              <p id="distroValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>systemd</h3>
-              <p id="systemdValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>OpenClaw CLI</h3>
-              <p id="openClawValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>Gateway</h3>
-              <p id="gatewayValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>Setup Stage</h3>
-              <p id="setupStageValue">Pending</p>
-            </article>
-            <article class="status-card">
-              <h3>Always-on Gateway</h3>
-              <p id="alwaysOnGatewayValue">Pending</p>
-            </article>
-          </div>
-
-          <div class="actions">
-            <button id="guidedSetupButton" class="button primary">Quick Setup</button>
-            <button id="installWslButton" class="button">Install WSL</button>
-            <button id="installOpenClawButton" class="button">Install OpenClaw</button>
-          </div>
-
-          <div class="actions">
-            <button id="runOnboardingButton" class="button">CLI Onboard</button>
-            <button id="gatewayStatusButton" class="button">Status</button>
-            <button id="gatewayStartButton" class="button">Start</button>
-            <button id="gatewayStopButton" class="button">Stop</button>
-          </div>
-
-          <div class="actions">
-            <button id="resumeSetupButton" class="button">Continue</button>
-            <button id="restartNowButton" class="button">Restart</button>
-            <button id="checkEnvButton" class="button">Check</button>
-          </div>
-
-          <div class="notes">
-            <h3>Notes</h3>
-            <ul id="notesList"></ul>
-          </div>
-        </section>
-
-        <section class="panel">
+      <main id="setupWorkspace" class="main-workspace">
+        <section class="panel feature-panel">
           <section class="feature-pane" data-feature-pane="onboarding">
             <div class="panel-header">
               <h2>Onboarding</h2>
@@ -214,41 +227,6 @@
             <p id="wizardStepMeta" class="wizard-step-meta">Type: note</p>
             <p id="wizardStepMessage" class="wizard-step-message">Follow the instructions to continue.</p>
             <p id="wizardGuideHint" class="wizard-guide-hint hidden"></p>
-            <div id="wizardQrPanel" class="wizard-qr-panel hidden">
-              <p class="wizard-qr-title">Scan QR</p>
-              <div class="wizard-qr-frame">
-                <img id="wizardQrImage" class="wizard-qr-image hidden" alt="WhatsApp pairing QR" />
-                <pre id="wizardQrAscii" class="wizard-qr-ascii hidden"></pre>
-                <p id="wizardQrFallback" class="wizard-qr-fallback">
-                  QR code is not available in this step payload yet. Follow the wizard instructions and refresh if needed.
-                </p>
-              </div>
-              <div class="wizard-qr-actions">
-                <button id="wizardQrScannedButton" class="button">I Have Scanned the QR</button>
-                <p id="wizardQrScanStatus" class="wizard-qr-status">Status: waiting for scan confirmation.</p>
-              </div>
-              <div id="wizardQrChecklist" class="wizard-qr-checklist hidden">
-                <p class="wizard-qr-checklist-title">WhatsApp</p>
-                <ul class="wizard-qr-checklist-list">
-                  <li id="wizardChecklistOpen" class="wizard-check-item" data-step-index="1">
-                    <span class="wizard-check-icon">1</span>
-                    <span>Open WhatsApp</span>
-                  </li>
-                  <li id="wizardChecklistLinked" class="wizard-check-item" data-step-index="2">
-                    <span class="wizard-check-icon">2</span>
-                    <span>Linked Devices</span>
-                  </li>
-                  <li id="wizardChecklistScan" class="wizard-check-item" data-step-index="3">
-                    <span class="wizard-check-icon">3</span>
-                    <span>Scan QR</span>
-                  </li>
-                  <li id="wizardChecklistConnected" class="wizard-check-item" data-step-index="4">
-                    <span class="wizard-check-icon">4</span>
-                    <span>Wait for connect</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
             <div id="wizardTelegramPanel" class="wizard-telegram-panel hidden">
               <p class="wizard-telegram-title">Telegram</p>
               <ul class="wizard-telegram-checklist-list">
@@ -325,12 +303,16 @@
 
             <label>
               Model Provider
-              <input id="modelProvider" type="text" placeholder="OpenAI" />
+              <select id="modelProvider">
+                <option value="">Select provider</option>
+              </select>
             </label>
 
             <label>
               Model Name
-              <input id="modelName" type="text" placeholder="gpt-4o-mini" />
+              <select id="modelName">
+                <option value="">Select model</option>
+              </select>
             </label>
 
             <label class="toggle-row">
@@ -370,7 +352,7 @@
                 <p id="whatsappChannelStatus">Unknown</p>
                 <p id="whatsappChannelDetail" class="panel-caption">Not checked.</p>
                 <div class="actions compact-actions">
-                  <button id="whatsappReconnectButton" class="button">Reconnect</button>
+                  <button id="whatsappReconnectButton" class="button">Guided Pair</button>
                   <button id="whatsappDisableButton" class="button">Disable</button>
                 </div>
               </article>
@@ -383,6 +365,52 @@
                   <button id="telegramDisableButton" class="button">Disable</button>
                 </div>
               </article>
+            </div>
+            <div class="divider"></div>
+            <div class="panel-header">
+              <h2>WhatsApp Helper</h2>
+              <button id="whatsappHelperStartButton" class="button">Start Pairing</button>
+            </div>
+            <div class="telegram-helper">
+              <p id="whatsappHelperStatus" class="panel-caption">Start guided pairing to load QR.</p>
+              <div id="wizardQrPanel" class="wizard-qr-panel hidden">
+                <p class="wizard-qr-title">Scan QR</p>
+                <div class="wizard-qr-frame">
+                  <img id="wizardQrImage" class="wizard-qr-image hidden" alt="WhatsApp pairing QR" />
+                  <pre id="wizardQrAscii" class="wizard-qr-ascii hidden"></pre>
+                  <p id="wizardQrFallback" class="wizard-qr-fallback">
+                    QR code is not available in this step payload yet. Follow the helper and refresh if needed.
+                  </p>
+                </div>
+                <p id="wizardQrScanStatus" class="wizard-qr-status">Status: waiting for scan confirmation.</p>
+                <div id="wizardQrChecklist" class="wizard-qr-checklist hidden">
+                  <p class="wizard-qr-checklist-title">WhatsApp</p>
+                  <ul class="wizard-qr-checklist-list">
+                    <li id="wizardChecklistOpen" class="wizard-check-item" data-step-index="1">
+                      <span class="wizard-check-icon">1</span>
+                      <span>Open WhatsApp</span>
+                    </li>
+                    <li id="wizardChecklistLinked" class="wizard-check-item" data-step-index="2">
+                      <span class="wizard-check-icon">2</span>
+                      <span>Linked Devices</span>
+                    </li>
+                    <li id="wizardChecklistScan" class="wizard-check-item" data-step-index="3">
+                      <span class="wizard-check-icon">3</span>
+                      <span>Scan QR</span>
+                    </li>
+                    <li id="wizardChecklistConnected" class="wizard-check-item" data-step-index="4">
+                      <span class="wizard-check-icon">4</span>
+                      <span>Wait for connect</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <div class="actions compact-actions">
+                <button id="wizardQrScannedButton" class="button">I Scanned QR</button>
+                <button id="whatsappHelperContinueButton" class="button">Continue Step</button>
+                <button id="whatsappHelperRefreshButton" class="button">Refresh</button>
+                <button id="whatsappHelperCancelButton" class="button">Cancel</button>
+              </div>
             </div>
             <div class="divider"></div>
             <div class="panel-header">
@@ -422,11 +450,15 @@
             <form id="modelManageForm" class="form" autocomplete="off">
             <label>
               Provider
-              <input id="manageModelProvider" type="text" placeholder="openai" />
+              <select id="manageModelProvider">
+                <option value="">Select provider</option>
+              </select>
             </label>
             <label>
               Model
-              <input id="manageModelName" type="text" placeholder="gpt-4o-mini" />
+              <select id="manageModelName">
+                <option value="">Select model</option>
+              </select>
             </label>
               <div class="actions compact-actions">
                 <button id="modelApplyButton" type="button" class="button primary">Apply Model</button>
@@ -466,7 +498,7 @@
           <section class="feature-pane hidden" data-feature-pane="logs">
             <div class="notes">
               <h3>Log</h3>
-              <pre id="logOutput" class="log">App ready.</pre>
+              <p class="panel-caption">Live log is pinned in the right rail.</p>
             </div>
           </section>
         </section>
@@ -476,13 +508,15 @@
         <section class="panel control-panel">
           <div class="panel-header">
             <h2>Chat</h2>
-            <span class="panel-caption">Streamed replies</span>
+            <span class="panel-caption">Primary view</span>
           </div>
 
-          <div class="actions control-actions">
+          <div class="command-bar">
             <button id="reloadChatButton" class="button">Reload</button>
-            <button id="retryChatGatewayButton" class="button">Start + Retry</button>
-            <button id="openControlFromChatButton" class="button">Open Full Control</button>
+            <button id="retryChatGatewayButton" class="button">Start Gateway</button>
+            <button id="openControlFromChatButton" class="button">Open Control</button>
+            <span class="panel-caption shortcut-hint">Ctrl+R reload</span>
+            <span class="panel-caption shortcut-hint">Ctrl+, settings</span>
           </div>
 
           <div class="control-status-wrap">
@@ -506,13 +540,13 @@
         <section class="panel control-panel">
           <div class="panel-header">
             <h2>Control</h2>
-            <span class="panel-caption">In app</span>
+            <span class="panel-caption">Embedded dashboard</span>
           </div>
 
-          <div class="actions control-actions">
+          <div class="command-bar">
             <button id="reloadControlButton" class="button">Reload</button>
             <button id="retryGatewayButton" class="button">Start + Retry</button>
-            <button id="backToSetupButton" class="button">Back</button>
+            <button id="backToSetupButton" class="button">Back to Setup</button>
           </div>
 
           <div class="control-status-wrap">

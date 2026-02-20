@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#0b1017"/>
+  <rect x="18" y="18" width="248" height="864" rx="14" fill="#121821" stroke="#223043"/>
+  <text x="36" y="52" fill="#20d56d" font-size="14" font-family="Arial, sans-serif" font-weight="700">OpenClaw Desktop</text>
+  <text x="36" y="76" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Setup. Connect. Run.</text>
+  <rect x="34" y="98" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="120" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Setup</text>
+  <rect x="34" y="138" width="216" height="34" rx="8" fill="#133b26" stroke="#22b663"/><text x="50" y="160" fill="#ebfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Chat</text>
+  <rect x="34" y="178" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="200" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Control</text>
+  <line x1="34" y1="236" x2="250" y2="236" stroke="#2a3a4f"/>
+  <text x="36" y="262" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Feature Menu</text>
+  <rect x="34" y="276" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="296" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Onboarding</text>
+  <rect x="34" y="312" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="332" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Settings</text>
+  <rect x="34" y="348" width="216" height="30" rx="8" fill="#133b26" stroke="#22b663"/><text x="50" y="368" fill="#ebfff3" font-size="12" font-family="Arial, sans-serif" font-weight="700">Channels</text>
+  <rect x="34" y="384" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="404" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Model</text>
+  <rect x="34" y="420" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="440" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Files</text>
+
+  <rect x="284" y="18" width="1138" height="864" rx="14" fill="#111822" stroke="#223043"/>
+  <text x="312" y="54" fill="#edf3fb" font-size="25" font-family="Arial, sans-serif" font-weight="700">Channels</text>
+  <text x="312" y="78" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">WhatsApp + Telegram management</text>
+  <rect x="1190" y="40" width="172" height="36" rx="9" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="1251" y="63" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Refresh</text>
+
+  <rect x="312" y="106" width="514" height="320" rx="12" fill="#0d1520" stroke="#253547"/>
+  <text x="336" y="140" fill="#edf3fb" font-size="18" font-family="Arial, sans-serif" font-weight="700">WhatsApp</text>
+  <text x="336" y="166" fill="#4ade80" font-size="13" font-family="Arial, sans-serif" font-weight="700">Connected</text>
+  <text x="336" y="190" fill="#8ea0b7" font-size="13" font-family="Arial, sans-serif">Linked and active on this gateway.</text>
+  <rect x="336" y="218" width="160" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="390" y="242" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Reconnect</text>
+  <rect x="506" y="218" width="140" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="554" y="242" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Disable</text>
+
+  <rect x="848" y="106" width="514" height="320" rx="12" fill="#0d1520" stroke="#253547"/>
+  <text x="872" y="140" fill="#edf3fb" font-size="18" font-family="Arial, sans-serif" font-weight="700">Telegram</text>
+  <text x="872" y="166" fill="#f59e0b" font-size="13" font-family="Arial, sans-serif" font-weight="700">Configured</text>
+  <text x="872" y="190" fill="#8ea0b7" font-size="13" font-family="Arial, sans-serif">Token saved. Validation pending.</text>
+  <rect x="872" y="218" width="160" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="926" y="242" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Reconnect</text>
+  <rect x="1042" y="218" width="140" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="1090" y="242" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Disable</text>
+
+  <rect x="312" y="446" width="1050" height="400" rx="12" fill="#0d1520" stroke="#253547"/>
+  <text x="336" y="482" fill="#edf3fb" font-size="19" font-family="Arial, sans-serif" font-weight="700">Telegram Helper</text>
+  <rect x="336" y="506" width="220" height="36" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="408" y="529" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Start Reconnect</text>
+  <text x="336" y="574" fill="#8ea0b7" font-size="13" font-family="Arial, sans-serif">1. Open @BotFather</text>
+  <rect x="520" y="552" width="150" height="36" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="576" y="575" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Copy Link</text>
+  <text x="336" y="618" fill="#8ea0b7" font-size="13" font-family="Arial, sans-serif">2. Run command /newbot</text>
+  <rect x="520" y="596" width="170" height="36" rx="9" fill="#1a2432" stroke="#2c3a4e"/><text x="574" y="619" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Copy /newbot</text>
+  <text x="336" y="664" fill="#8ea0b7" font-size="13" font-family="Arial, sans-serif">3. Paste bot token</text>
+  <rect x="336" y="676" width="620" height="44" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="352" y="703" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">123456789:AAExampleBotToken</text>
+  <rect x="968" y="676" width="160" height="44" rx="9" fill="#133b26" stroke="#22b663"/>
+  <text x="1026" y="703" fill="#ecfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Save Token</text>
+</svg>

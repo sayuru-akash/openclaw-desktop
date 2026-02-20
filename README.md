@@ -2,13 +2,22 @@
 
 Windows-first Electron desktop wrapper for OpenClaw with guided setup.
 
+## UI overview (current)
+
+The app is organized into three workspaces with a left-side navigation:
+- `Setup`: advanced controls + status, with feature panes (Onboarding, Settings, Channels, Model, Files, Updates, Logs).
+- `Chat`: embedded Chat view (webview) with gateway readiness checks.
+- `Control`: embedded full Control UI (webview) with gateway readiness checks.
+
+First-time users are routed into a dedicated **Onboarding workspace** that presents a step-by-step flow (Welcome → WSL → OpenClaw → Gateway → Model → Done) plus a live setup log. The onboarding wizard is still powered by OpenClaw Gateway RPC and is available under the `Onboarding` feature pane.
+
 ## MCP scope
 
 This first cut focuses on removing CLI/JSON friction for non-technical users:
 
 - Detect Windows + WSL + distro + `systemd` + OpenClaw CLI + gateway status.
 - Run setup actions from UI:
-  - First-run onboarding flow (Welcome -> WSL -> OpenClaw -> Gateway -> Model/API -> Chat handoff)
+  - First-run onboarding flow (Welcome → WSL → OpenClaw → Gateway → Model/API → Chat handoff)
   - Advanced setup controls remain available outside onboarding for troubleshooting
   - One-click guided setup (`Run Guided Setup`) that chains WSL install, OpenClaw install, and gateway readiness for onboarding
   - Live setup progress stream (stage + command output) from main process to renderer
@@ -20,7 +29,8 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
   - Auto-progress Telegram bot checklist (`BotFather -> token -> destination -> validate`)
   - Auto-progress model checklist (`Provider -> Model -> Credential`) with current selection summary
   - Automatic handoff from setup to embedded in-app Control UI when gateway is healthy
-  - Dedicated in-app Chat workspace (streaming chat via embedded OpenClaw WebChat view)
+  - Dedicated in-app Chat workspace (embedded webview to the local OpenClaw UI)
+  - Dedicated in-app Control workspace (embedded webview to the local OpenClaw UI)
   - Tray support with close-to-tray behavior on Windows (app keeps running unless user selects Quit)
   - Tray gateway controls (`Status`, `Start Gateway`, `Stop Gateway`)
   - Always-on gateway toggle backed by Windows Task Scheduler (`ONLOGON` task)
@@ -47,7 +57,7 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
 - `src/main/services/setup-orchestrator.ts`: elevated setup + reboot-resume orchestration.
 - `src/preload/preload.ts`: secure IPC bridge.
 - `src/renderer/index.html`: onboarding UI shell.
-- `src/renderer/app.js`: client-side setup orchestration.
+- `src/renderer/app.js`: client-side setup orchestration + wizard UI logic.
 
 ## Development
 
@@ -82,8 +92,8 @@ npm run dist
 - If reboot is required, setup state is saved and auto-resume is registered for next login on packaged builds.
 - TUI onboarding is replaced by UI onboarding wizard inside the app, backed by Gateway wizard RPC calls.
 - App can trigger restart directly (`shutdown.exe /r /t 5`) from the setup UI.
-- Control UI is shown inside the app using an embedded webview pointed at local `http://127.0.0.1:18789/`.
-- If gateway is unavailable, app falls back to setup workspace with retry actions (`Start Gateway + Retry`).
+- Control + Chat views are shown inside the app using embedded webviews pointed at local `http://127.0.0.1:18789/`.
+- If gateway is unavailable, app shows fallback state with retry actions (`Start Gateway + Retry`).
 - Auto-update checks require a configured publish feed in packaged builds.
 - This MCP intentionally keeps one path only: local WSL-based setup.
 - Remote/fallback modes are intentionally not included yet.

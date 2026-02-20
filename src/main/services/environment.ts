@@ -240,6 +240,7 @@ export class EnvironmentService {
       provider: inferred.provider,
       model: inferred.model,
       availableProviders: inferred.availableProviders,
+      modelsByProvider: inferred.modelsByProvider,
       detail: inferred.detail
     };
   }

@@ -123,6 +123,7 @@ export interface ModelStatusResult {
   provider: string;
   model: string;
   availableProviders: string[];
+  modelsByProvider: Record<string, string[]>;
   detail: string;
 }
 

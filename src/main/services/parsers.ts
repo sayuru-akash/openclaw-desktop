@@ -4,6 +4,7 @@ export interface InferredModelStatus {
   provider: string;
   model: string;
   availableProviders: string[];
+  modelsByProvider: Record<string, string[]>;
   detail: string;
 }
 
@@ -88,30 +89,142 @@ export function inferModelStatusFromPayload(payload: unknown): InferredModelStat
     "id"
   ]);
   const availableProviders = collectProviders(payload);
+  const modelsByProvider = collectProviderModels(payload);
 
   return {
     provider: provider || "",
     model: model || "",
     availableProviders,
+    modelsByProvider,
     detail: provider && model ? `Using ${provider} / ${model}` : "Model is not configured yet."
   };
 }
 
 function collectProviders(payload: unknown): string[] {
   const providers = new Set<string>();
+  const register = (value: unknown) => {
+    if (typeof value !== "string" || !value.trim()) {
+      return;
+    }
+    providers.add(value.trim());
+  };
+
   walkPayload(payload, (node) => {
     if (!node || typeof node !== "object") {
       return;
     }
 
     const record = node as Record<string, unknown>;
-    const rawProvider = record.provider;
-    if (typeof rawProvider === "string" && rawProvider.trim()) {
-      providers.add(rawProvider.trim());
+    register(record.provider);
+    register(record.providerId);
+    register(record.providerKey);
+
+    const providersArray = Array.isArray(record.providers) ? record.providers : [];
+    for (const entry of providersArray) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const providerRecord = entry as Record<string, unknown>;
+      register(providerRecord.provider);
+      register(providerRecord.providerId);
+      register(providerRecord.providerKey);
+      register(providerRecord.id);
+      register(providerRecord.name);
     }
   });
 
   return [...providers].sort((left, right) => left.localeCompare(right));
+}
+
+function collectProviderModels(payload: unknown): Record<string, string[]> {
+  const catalog = new Map<string, Set<string>>();
+
+  const register = (providerRaw: unknown, modelRaw: unknown) => {
+    if (typeof providerRaw !== "string" || !providerRaw.trim()) {
+      return;
+    }
+    if (typeof modelRaw !== "string" || !modelRaw.trim()) {
+      return;
+    }
+
+    const provider = providerRaw.trim();
+    const model = modelRaw.trim();
+    if (!catalog.has(provider)) {
+      catalog.set(provider, new Set<string>());
+    }
+    catalog.get(provider)?.add(model);
+  };
+
+  const registerFromModelsArray = (providerRaw: unknown, modelsValue: unknown) => {
+    if (!Array.isArray(modelsValue)) {
+      return;
+    }
+
+    for (const item of modelsValue) {
+      if (typeof item === "string") {
+        register(providerRaw, item);
+        continue;
+      }
+
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+
+      const modelObject = item as Record<string, unknown>;
+      register(providerRaw, modelObject.model);
+      register(providerRaw, modelObject.modelId);
+      register(providerRaw, modelObject.id);
+      register(providerRaw, modelObject.name);
+    }
+  };
+
+  walkPayload(payload, (node) => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    const providerRaw = typeof record.provider === "string"
+      ? record.provider
+      : typeof record.providerId === "string"
+        ? record.providerId
+        : typeof record.providerKey === "string"
+          ? record.providerKey
+          : "";
+
+    if (providerRaw) {
+      register(providerRaw, record.model);
+      register(providerRaw, record.modelId);
+      register(providerRaw, record.selectedModel);
+      register(providerRaw, record.defaultModel);
+      registerFromModelsArray(providerRaw, record.models);
+    }
+
+    const providersArray = Array.isArray(record.providers) ? record.providers : [];
+    for (const entry of providersArray) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+
+      const providerRecord = entry as Record<string, unknown>;
+      const nestedProvider = providerRecord.provider
+        ?? providerRecord.providerId
+        ?? providerRecord.providerKey
+        ?? providerRecord.id
+        ?? providerRecord.name;
+      register(nestedProvider, providerRecord.model);
+      register(nestedProvider, providerRecord.modelId);
+      register(nestedProvider, providerRecord.selectedModel);
+      register(nestedProvider, providerRecord.defaultModel);
+      registerFromModelsArray(nestedProvider, providerRecord.models);
+    }
+  });
+
+  const result: Record<string, string[]> = {};
+  for (const [provider, models] of catalog.entries()) {
+    result[provider] = [...models].sort((left, right) => left.localeCompare(right));
+  }
+  return result;
 }
 
 function findFirstStringValue(payload: unknown, keys: string[]): string {
@@ -164,4 +277,3 @@ function walkPayload(payload: unknown, visitor: (node: unknown) => void): void {
     }
   }
 }
-

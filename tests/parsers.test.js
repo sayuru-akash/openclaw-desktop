@@ -78,8 +78,14 @@ test("inferModelStatusFromPayload extracts provider/model from nested payload", 
       activeProvider: "openai",
       activeModel: "gpt-4o-mini",
       providers: [
-        { provider: "openai" },
-        { provider: "anthropic" }
+        {
+          provider: "openai",
+          models: ["gpt-4o-mini", "gpt-4.1-mini"]
+        },
+        {
+          provider: "anthropic",
+          models: [{ id: "claude-3-7-sonnet" }]
+        }
       ]
     }
   };
@@ -88,6 +94,10 @@ test("inferModelStatusFromPayload extracts provider/model from nested payload", 
   assert.equal(inferred.provider, "openai");
   assert.equal(inferred.model, "gpt-4o-mini");
   assert.deepEqual(inferred.availableProviders, ["anthropic", "openai"]);
+  assert.deepEqual(inferred.modelsByProvider, {
+    anthropic: ["claude-3-7-sonnet"],
+    openai: ["gpt-4.1-mini", "gpt-4o-mini"]
+  });
   assert.equal(inferred.detail, "Using openai / gpt-4o-mini");
 });
 
@@ -96,6 +106,6 @@ test("inferModelStatusFromPayload handles empty payload", () => {
   assert.equal(inferred.provider, "");
   assert.equal(inferred.model, "");
   assert.deepEqual(inferred.availableProviders, []);
+  assert.deepEqual(inferred.modelsByProvider, {});
   assert.equal(inferred.detail, "Model is not configured yet.");
 });
-

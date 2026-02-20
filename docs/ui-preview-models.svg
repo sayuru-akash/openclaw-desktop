@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#0b1017"/>
+  <rect x="18" y="18" width="248" height="864" rx="14" fill="#121821" stroke="#223043"/>
+  <text x="36" y="52" fill="#20d56d" font-size="14" font-family="Arial, sans-serif" font-weight="700">OpenClaw Desktop</text>
+  <text x="36" y="76" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Setup. Connect. Run.</text>
+  <rect x="34" y="98" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="120" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Setup</text>
+  <rect x="34" y="138" width="216" height="34" rx="8" fill="#133b26" stroke="#22b663"/><text x="50" y="160" fill="#ebfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Chat</text>
+  <rect x="34" y="178" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="200" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Control</text>
+  <line x1="34" y1="236" x2="250" y2="236" stroke="#2a3a4f"/>
+  <text x="36" y="262" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Feature Menu</text>
+  <rect x="34" y="276" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="296" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Onboarding</text>
+  <rect x="34" y="312" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="332" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Settings</text>
+  <rect x="34" y="348" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="368" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Channels</text>
+  <rect x="34" y="384" width="216" height="30" rx="8" fill="#133b26" stroke="#22b663"/><text x="50" y="404" fill="#ebfff3" font-size="12" font-family="Arial, sans-serif" font-weight="700">Model</text>
+  <rect x="34" y="420" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="440" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Files</text>
+
+  <rect x="284" y="18" width="1138" height="864" rx="14" fill="#111822" stroke="#223043"/>
+  <text x="312" y="54" fill="#edf3fb" font-size="25" font-family="Arial, sans-serif" font-weight="700">Model</text>
+  <text x="312" y="78" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">Change provider and model safely</text>
+  <rect x="1190" y="40" width="172" height="36" rx="9" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="1251" y="63" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Refresh</text>
+
+  <rect x="312" y="106" width="1050" height="270" rx="12" fill="#0d1520" stroke="#253547"/>
+  <text x="338" y="142" fill="#edf3fb" font-size="18" font-family="Arial, sans-serif" font-weight="700">Current Selection</text>
+  <rect x="338" y="162" width="320" height="86" rx="10" fill="#0b1119" stroke="#2b4055"/>
+  <text x="358" y="192" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Provider</text>
+  <text x="358" y="220" fill="#dfe8f4" font-size="18" font-family="Arial, sans-serif" font-weight="700">openai</text>
+  <rect x="674" y="162" width="688" height="86" rx="10" fill="#0b1119" stroke="#2b4055"/>
+  <text x="694" y="192" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Model</text>
+  <text x="694" y="220" fill="#dfe8f4" font-size="18" font-family="Arial, sans-serif" font-weight="700">gpt-4o-mini</text>
+
+  <rect x="312" y="396" width="1050" height="450" rx="12" fill="#0d1520" stroke="#253547"/>
+  <text x="338" y="432" fill="#edf3fb" font-size="19" font-family="Arial, sans-serif" font-weight="700">Apply New Model</text>
+
+  <text x="338" y="470" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Provider</text>
+  <rect x="338" y="480" width="420" height="46" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="354" y="508" fill="#dfe8f4" font-size="14" font-family="Arial, sans-serif">anthropic</text>
+
+  <text x="338" y="558" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Model</text>
+  <rect x="338" y="568" width="740" height="46" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="354" y="596" fill="#dfe8f4" font-size="14" font-family="Arial, sans-serif">claude-3-5-sonnet-latest</text>
+
+  <rect x="338" y="640" width="210" height="42" rx="9" fill="#133b26" stroke="#22b663"/>
+  <text x="406" y="666" fill="#ecfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Apply Model</text>
+
+  <rect x="338" y="712" width="840" height="110" rx="10" fill="#070d17" stroke="#2a3f55"/>
+  <text x="356" y="740" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[11:08:05] Model applied: anthropic / claude-3-5-sonnet-latest</text>
+  <text x="356" y="764" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[11:08:07] Model status: Using anthropic / claude-3-5-sonnet-latest</text>
+</svg>

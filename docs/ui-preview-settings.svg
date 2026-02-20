@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#0b1017"/>
+  <rect x="18" y="18" width="248" height="864" rx="14" fill="#121821" stroke="#223043"/>
+  <text x="36" y="52" fill="#20d56d" font-size="14" font-family="Arial, sans-serif" font-weight="700">OpenClaw Desktop</text>
+  <text x="36" y="76" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Setup. Connect. Run.</text>
+
+  <rect x="34" y="98" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="120" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Setup</text>
+  <rect x="34" y="138" width="216" height="34" rx="8" fill="#133b26" stroke="#22b663"/>
+  <text x="50" y="160" fill="#ebfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Chat</text>
+  <rect x="34" y="178" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="200" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Control</text>
+
+  <line x1="34" y1="236" x2="250" y2="236" stroke="#2a3a4f"/>
+  <text x="36" y="262" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Feature Menu</text>
+  <rect x="34" y="276" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="296" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Onboarding</text>
+  <rect x="34" y="312" width="216" height="30" rx="8" fill="#133b26" stroke="#22b663"/><text x="50" y="332" fill="#ebfff3" font-size="12" font-family="Arial, sans-serif" font-weight="700">Settings</text>
+  <rect x="34" y="348" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="368" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Channels</text>
+  <rect x="34" y="384" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="404" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Model</text>
+  <rect x="34" y="420" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="440" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Files</text>
+  <rect x="34" y="456" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="476" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Updates</text>
+  <rect x="34" y="492" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/><text x="50" y="512" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Logs</text>
+
+  <rect x="284" y="18" width="1138" height="864" rx="14" fill="#111822" stroke="#223043"/>
+  <text x="312" y="54" fill="#edf3fb" font-size="25" font-family="Arial, sans-serif" font-weight="700">Settings</text>
+  <text x="312" y="78" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">Profile and startup configuration</text>
+
+  <rect x="312" y="106" width="1050" height="740" rx="12" fill="#0d1520" stroke="#253547"/>
+
+  <text x="338" y="146" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Name</text>
+  <rect x="338" y="156" width="520" height="44" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="354" y="183" fill="#dfe8f4" font-size="14" font-family="Arial, sans-serif">Personal</text>
+
+  <text x="338" y="228" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Workspace Folder</text>
+  <rect x="338" y="238" width="840" height="44" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="354" y="265" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">C:\Users\You\OpenClaw</text>
+
+  <text x="338" y="310" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Model Provider</text>
+  <rect x="338" y="320" width="340" height="44" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="354" y="347" fill="#dfe8f4" font-size="14" font-family="Arial, sans-serif">openai</text>
+
+  <text x="694" y="310" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Model Name</text>
+  <rect x="694" y="320" width="484" height="44" rx="8" fill="#0b1119" stroke="#2b4055"/>
+  <text x="710" y="347" fill="#dfe8f4" font-size="14" font-family="Arial, sans-serif">gpt-4o-mini</text>
+
+  <rect x="338" y="396" width="18" height="18" rx="4" fill="#123b25" stroke="#22b663"/>
+  <text x="366" y="410" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Start gateway on app open</text>
+  <rect x="338" y="430" width="18" height="18" rx="4" fill="#123b25" stroke="#22b663"/>
+  <text x="366" y="444" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Always on at Windows sign-in</text>
+  <text x="366" y="466" fill="#8ea0b7" font-size="12" font-family="Arial, sans-serif">Enabled. Task Scheduler state: Ready.</text>
+
+  <rect x="338" y="504" width="172" height="40" rx="9" fill="#133b26" stroke="#22b663"/>
+  <text x="402" y="529" fill="#ecfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Save</text>
+
+  <rect x="338" y="576" width="840" height="234" rx="10" fill="#070d17" stroke="#2a3f55"/>
+  <text x="356" y="604" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:56:12] Configuration loaded.</text>
+  <text x="356" y="626" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:56:49] Configuration saved (2026-02-20T10:56:49.102Z).</text>
+</svg>

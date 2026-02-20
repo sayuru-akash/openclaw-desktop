@@ -111,12 +111,25 @@ const channelElements = {
   telegramDisable: byId("telegramDisableButton")
 };
 
+const whatsappHelperElements = {
+  start: byId("whatsappHelperStartButton"),
+  continueStep: byId("whatsappHelperContinueButton"),
+  refresh: byId("whatsappHelperRefreshButton"),
+  cancel: byId("whatsappHelperCancelButton"),
+  status: byId("whatsappHelperStatus")
+};
+
 const modelManagementElements = {
   refresh: byId("modelRefreshButton"),
   current: byId("modelCurrentStatus"),
   provider: byId("manageModelProvider"),
   model: byId("manageModelName"),
   apply: byId("modelApplyButton")
+};
+
+const settingsModelElements = {
+  provider: byId("modelProvider"),
+  model: byId("modelName")
 };
 
 const workspaceFileElements = {
@@ -392,13 +405,160 @@ function inferProviderFromModelName(text) {
   return "";
 }
 
+function getModelCatalogFromStatus(status) {
+  const providers = new Set();
+  const modelsByProvider = {};
+
+  if (status && Array.isArray(status.availableProviders)) {
+    for (const provider of status.availableProviders) {
+      if (typeof provider === "string" && provider.trim()) {
+        providers.add(provider.trim());
+      }
+    }
+  }
+
+  if (status && status.modelsByProvider && typeof status.modelsByProvider === "object") {
+    for (const [providerRaw, modelsRaw] of Object.entries(status.modelsByProvider)) {
+      const provider = typeof providerRaw === "string" ? providerRaw.trim() : "";
+      if (!provider) {
+        continue;
+      }
+
+      providers.add(provider);
+      if (!Array.isArray(modelsRaw)) {
+        continue;
+      }
+
+      const modelSet = new Set();
+      for (const model of modelsRaw) {
+        if (typeof model === "string" && model.trim()) {
+          modelSet.add(model.trim());
+        }
+      }
+      modelsByProvider[provider] = [...modelSet].sort((left, right) => left.localeCompare(right));
+    }
+  }
+
+  if (status && typeof status.provider === "string" && status.provider.trim()) {
+    const provider = status.provider.trim();
+    providers.add(provider);
+    if (status.model && typeof status.model === "string" && status.model.trim()) {
+      if (!modelsByProvider[provider]) {
+        modelsByProvider[provider] = [];
+      }
+      if (!modelsByProvider[provider].includes(status.model.trim())) {
+        modelsByProvider[provider].push(status.model.trim());
+      }
+    }
+  }
+
+  for (const provider of Object.keys(modelsByProvider)) {
+    modelsByProvider[provider] = [...new Set(modelsByProvider[provider])].sort((left, right) => left.localeCompare(right));
+  }
+
+  return {
+    providers: [...providers].sort((left, right) => left.localeCompare(right)),
+    modelsByProvider
+  };
+}
+
+function setSelectOptions(selectNode, options, placeholder, preferredValue = "") {
+  const normalizedPreferred = typeof preferredValue === "string" ? preferredValue.trim() : "";
+  const values = [...new Set(options.map((item) => String(item || "").trim()).filter(Boolean))];
+  if (normalizedPreferred && !values.includes(normalizedPreferred)) {
+    values.unshift(normalizedPreferred);
+  }
+
+  const previous = selectNode.value;
+  selectNode.innerHTML = "";
+
+  const placeholderOption = document.createElement("option");
+  placeholderOption.value = "";
+  placeholderOption.textContent = placeholder;
+  selectNode.appendChild(placeholderOption);
+
+  for (const value of values) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    selectNode.appendChild(option);
+  }
+
+  if (normalizedPreferred && values.includes(normalizedPreferred)) {
+    selectNode.value = normalizedPreferred;
+    return;
+  }
+
+  if (previous && values.includes(previous)) {
+    selectNode.value = previous;
+    return;
+  }
+
+  selectNode.value = "";
+}
+
+function resolveProviderModels(catalog, providerRaw) {
+  const provider = String(providerRaw || "").trim();
+  if (!provider) {
+    return [];
+  }
+
+  if (Array.isArray(catalog.modelsByProvider[provider])) {
+    return catalog.modelsByProvider[provider];
+  }
+
+  const match = Object.keys(catalog.modelsByProvider).find((key) => key.toLowerCase() === provider.toLowerCase());
+  return match ? catalog.modelsByProvider[match] : [];
+}
+
+function syncModelSelectPair(pair, catalog, preferredProvider = "", preferredModel = "") {
+  setSelectOptions(
+    pair.provider,
+    catalog.providers,
+    catalog.providers.length ? "Select provider" : "No providers found",
+    preferredProvider
+  );
+
+  const selectedProvider = pair.provider.value;
+  const models = resolveProviderModels(catalog, selectedProvider);
+  setSelectOptions(
+    pair.model,
+    models,
+    selectedProvider ? (models.length ? "Select model" : "No models for provider") : "Select provider first",
+    preferredModel
+  );
+}
+
+function syncAllModelSelects(preferences = {}) {
+  const catalog = getModelCatalogFromStatus(lastModelStatus);
+
+  syncModelSelectPair(
+    { provider: onboardingElements.modelProvider, model: onboardingElements.modelName },
+    catalog,
+    preferences.onboardingProvider,
+    preferences.onboardingModel
+  );
+  syncModelSelectPair(
+    { provider: modelManagementElements.provider, model: modelManagementElements.model },
+    catalog,
+    preferences.manageProvider,
+    preferences.manageModel
+  );
+  syncModelSelectPair(
+    { provider: settingsModelElements.provider, model: settingsModelElements.model },
+    catalog,
+    preferences.settingsProvider,
+    preferences.settingsModel
+  );
+}
+
 function syncModelStateIntoConfigForm() {
   if (wizardModelProvider) {
-    byId("modelProvider").value = wizardModelProvider;
+    settingsModelElements.provider.value = wizardModelProvider;
   }
 
   if (wizardModelName) {
-    byId("modelName").value = wizardModelName;
+    settingsModelElements.model.value = wizardModelName;
   }
 }
 
@@ -533,13 +693,22 @@ function updateOnboardingUiFromState() {
 
   const modelProvider = (appConfig && appConfig.modelProvider) || (lastModelStatus && lastModelStatus.provider) || "";
   const modelName = (appConfig && appConfig.modelName) || (lastModelStatus && lastModelStatus.model) || "";
+  const onboardingProvider = onboardingElements.modelProvider.value || modelProvider;
+  const onboardingModel = onboardingElements.modelName.value || modelName;
+  const manageProvider = modelManagementElements.provider.value || modelProvider;
+  const manageModel = modelManagementElements.model.value || modelName;
+  const settingsProvider = settingsModelElements.provider.value || modelProvider;
+  const settingsModel = settingsModelElements.model.value || modelName;
 
-  if (!onboardingElements.modelProvider.value && modelProvider) {
-    onboardingElements.modelProvider.value = modelProvider;
-  }
-  if (!onboardingElements.modelName.value && modelName) {
-    onboardingElements.modelName.value = modelName;
-  }
+  syncAllModelSelects({
+    onboardingProvider,
+    onboardingModel,
+    manageProvider,
+    manageModel,
+    settingsProvider,
+    settingsModel
+  });
+
   if (!onboardingElements.modelApiKey.value && appConfig && appConfig.modelApiKey) {
     onboardingElements.modelApiKey.value = appConfig.modelApiKey;
   }
@@ -603,7 +772,7 @@ function setWorkspace(workspace) {
   workspaceButtons.showChat.classList.toggle("primary", showingChat);
   workspaceButtons.showControl.classList.toggle("primary", showingControl);
   if (featureSwitchPanel) {
-    featureSwitchPanel.classList.toggle("hidden", !showingSetup);
+    featureSwitchPanel.classList.toggle("hidden", showingOnboarding);
   }
 
   if (!showingChat && chatTabSelectionTimer) {
@@ -803,6 +972,11 @@ function renderChannelStatuses(payload) {
 
   setStatus(channelElements.whatsappStatus, whatsapp.summary, toneForChannel(whatsapp));
   channelElements.whatsappDetail.textContent = whatsapp.detail || "No detail.";
+  if (whatsapp.connected) {
+    setWhatsAppHelperStatus("WhatsApp connected.");
+  } else if (!wizardSessionId) {
+    setWhatsAppHelperStatus("Start guided pairing to load QR.");
+  }
 
   setStatus(channelElements.telegramStatus, telegram.summary, toneForChannel(telegram));
   channelElements.telegramDetail.textContent = telegram.detail || "No detail.";
@@ -822,8 +996,20 @@ function renderModelManagementStatus(payload) {
   const provider = payload.provider || "none";
   const model = payload.model || "none";
   modelManagementElements.current.textContent = `Current: ${provider} / ${model}`;
-  modelManagementElements.provider.value = payload.provider || "";
-  modelManagementElements.model.value = payload.model || "";
+  const onboardingProvider = onboardingElements.modelProvider.value || payload.provider || "";
+  const onboardingModel = onboardingElements.modelName.value || payload.model || "";
+  const manageProvider = modelManagementElements.provider.value || payload.provider || "";
+  const manageModel = modelManagementElements.model.value || payload.model || "";
+  const settingsProvider = settingsModelElements.provider.value || payload.provider || "";
+  const settingsModel = settingsModelElements.model.value || payload.model || "";
+  syncAllModelSelects({
+    onboardingProvider,
+    onboardingModel,
+    manageProvider,
+    manageModel,
+    settingsProvider,
+    settingsModel
+  });
 }
 
 async function refreshModelManagementStatus(logMessage = false) {
@@ -930,11 +1116,15 @@ async function loadConfig() {
   appConfig = config;
   byId("profileName").value = config.profileName;
   byId("workspacePath").value = config.workspacePath;
-  byId("modelProvider").value = config.modelProvider || "";
-  byId("modelName").value = config.modelName || "";
+  syncAllModelSelects({
+    onboardingProvider: config.modelProvider || "",
+    onboardingModel: config.modelName || "",
+    manageProvider: config.modelProvider || "",
+    manageModel: config.modelName || "",
+    settingsProvider: config.modelProvider || "",
+    settingsModel: config.modelName || ""
+  });
   byId("autoStartGateway").checked = Boolean(config.autoStartGateway);
-  onboardingElements.modelProvider.value = config.modelProvider || "";
-  onboardingElements.modelName.value = config.modelName || "";
   onboardingElements.modelApiKey.value = config.modelApiKey || "";
   if (config.modelProvider) {
     wizardModelProvider = config.modelProvider;
@@ -949,8 +1139,8 @@ async function loadConfig() {
 async function saveConfig() {
   const profileName = byId("profileName").value.trim();
   const workspacePath = byId("workspacePath").value.trim();
-  const modelProvider = byId("modelProvider").value.trim();
-  const modelName = byId("modelName").value.trim();
+  const modelProvider = settingsModelElements.provider.value.trim();
+  const modelName = settingsModelElements.model.value.trim();
   const autoStartGateway = byId("autoStartGateway").checked;
 
   const config = await window.openclaw.saveConfig({
@@ -1037,8 +1227,14 @@ async function saveOnboardingModelSelection() {
   });
   appConfig = savedConfig;
   renderModelManagementStatus(applied);
-  byId("modelProvider").value = provider;
-  byId("modelName").value = model;
+  syncAllModelSelects({
+    onboardingProvider: provider,
+    onboardingModel: model,
+    manageProvider: provider,
+    manageModel: model,
+    settingsProvider: provider,
+    settingsModel: model
+  });
   onboardingElements.modelStatus.textContent = `Saved: ${provider} / ${model}`;
   updateOnboardingUiFromState();
   appendLog(`Onboarding model saved: ${provider} / ${model}`);
@@ -1085,6 +1281,7 @@ async function runEnvironmentCheck() {
       provider: "",
       model: "",
       availableProviders: [],
+      modelsByProvider: {},
       detail: "Install OpenClaw first."
     });
   }
@@ -1124,6 +1321,10 @@ function setWizardGuideHint(message) {
 function setWizardQrScanStatus(done, message) {
   wizardElements.qrScanStatus.textContent = message;
   wizardElements.qrScanStatus.classList.toggle("done", done);
+}
+
+function setWhatsAppHelperStatus(message) {
+  whatsappHelperElements.status.textContent = message;
 }
 
 function setChecklistItemState(element, state) {
@@ -1485,6 +1686,7 @@ function resetWizardQrPanel() {
   wizardElements.qrAscii.textContent = "";
   wizardElements.qrAscii.classList.remove("payload");
   setWizardQrScanStatus(false, "Status: waiting for scan confirmation.");
+  setWhatsAppHelperStatus("Start guided pairing to load QR.");
   renderWizardPairingChecklist();
 }
 
@@ -1608,6 +1810,9 @@ function renderWizardQrPanel(step, template) {
 
   if (!showQrPanel) {
     resetWizardQrPanel();
+    if (template && template.intent === "whatsapp") {
+      setWhatsAppHelperStatus("Waiting for QR payload from OpenClaw...");
+    }
     return;
   }
 
@@ -1632,9 +1837,11 @@ function renderWizardQrPanel(step, template) {
   if (qrCandidate.kind === "image") {
     wizardElements.qrImage.setAttribute("src", qrCandidate.value);
     wizardElements.qrImage.classList.remove("hidden");
+    setWhatsAppHelperStatus("QR ready. Scan it with WhatsApp Linked Devices.");
   } else if (qrCandidate.kind === "ascii") {
     wizardElements.qrAscii.textContent = qrCandidate.value;
     wizardElements.qrAscii.classList.remove("hidden");
+    setWhatsAppHelperStatus("QR payload ready. Scan from your phone.");
   } else if (qrCandidate.kind === "payload") {
     wizardElements.qrAscii.textContent = qrCandidate.value;
     wizardElements.qrAscii.classList.add("payload");
@@ -1642,10 +1849,12 @@ function renderWizardQrPanel(step, template) {
     wizardElements.qrFallback.classList.remove("hidden");
     wizardElements.qrFallback.textContent =
       "Raw pairing payload shown. If QR image is expected, click Refresh Status or open Control workspace.";
+    setWhatsAppHelperStatus("Pairing payload ready. Follow the checklist and continue.");
   } else {
     wizardElements.qrFallback.classList.remove("hidden");
     wizardElements.qrFallback.textContent =
       "QR placeholder step detected. Follow WhatsApp instructions and refresh until the QR appears.";
+    setWhatsAppHelperStatus("Waiting for QR generation...");
   }
 
   if (wizardQrScanned) {
@@ -1664,6 +1873,7 @@ function renderWizardQrPanel(step, template) {
 function confirmWizardQrScanned() {
   wizardQrScanned = true;
   setWizardQrScanStatus(true, wizardPairingConnected ? "Status: connected." : "Status: scan confirmed.");
+  setWhatsAppHelperStatus(wizardPairingConnected ? "Connected." : "Scan confirmed. Waiting for channel to report connected.");
   clearWizardValidation();
 
   if (currentWizardStep && currentWizardStep.type === "confirm") {
@@ -2017,6 +2227,11 @@ function updateWizardActionAvailability() {
   wizardElements.refresh.disabled = !hasSession;
   wizardElements.complete.disabled = hasSession;
   wizardElements.qrScanned.disabled = !hasSession || !currentWizardQrRequired || wizardQrScanned;
+
+  whatsappHelperElements.start.disabled = hasSession;
+  whatsappHelperElements.continueStep.disabled = !hasSession || !hasStep || qrGateBlocked;
+  whatsappHelperElements.refresh.disabled = !hasSession;
+  whatsappHelperElements.cancel.disabled = !hasSession;
 }
 
 function isStepRequired(step) {
@@ -2269,6 +2484,11 @@ function renderWizardStep(step) {
 
   const template = buildWizardTemplate(step);
   currentWizardTemplate = template;
+  if (template.intent === "whatsapp") {
+    setWhatsAppHelperStatus("WhatsApp step active. Follow the QR checklist.");
+  } else {
+    setWhatsAppHelperStatus("WhatsApp helper idle. Click Start Pairing.");
+  }
   const rawStepMessage = step.message || "";
   const resolvedMessage = template.message || rawStepMessage || "Follow this step and continue.";
   const guideParts = [];
@@ -2463,6 +2683,7 @@ async function handleWizardCompletion() {
   stopWizardStatusPolling();
   wizardPairingConnected = true;
   renderWizardPairingChecklist();
+  setWhatsAppHelperStatus("Pairing flow completed.");
   appendLog("Wizard reported completion. Finalizing onboarding setup state...");
   const state = await window.openclaw.completeOnboardingFromUi();
   renderSetupState(state);
@@ -2509,10 +2730,117 @@ function renderWizardResult(payload) {
     renderWizardStep(null);
     wizardSessionId = "";
     setWizardSessionLabel("Wizard completed.");
+    setWhatsAppHelperStatus("Pairing flow completed.");
   }
 
   renderWizardPairingChecklist();
   updateWizardActionAvailability();
+}
+
+function getAutoWhatsAppBootstrapAnswer(step, template) {
+  if (!step) {
+    return null;
+  }
+
+  if (template.intent === "whatsapp") {
+    return null;
+  }
+
+  if (step.type === "note" || step.type === "progress") {
+    return { stepId: step.id };
+  }
+
+  if (step.type === "confirm") {
+    return { stepId: step.id, value: true };
+  }
+
+  if (step.type === "select" || step.type === "action") {
+    const options = step.options || [];
+    const index = options.findIndex((option) => {
+      const blob = `${option.label || ""} ${option.hint || ""}`.toLowerCase();
+      return blob.includes("whatsapp");
+    });
+    if (index < 0) {
+      return null;
+    }
+    return { stepId: step.id, value: options[index].value };
+  }
+
+  if (step.type === "multiselect") {
+    const values = (step.options || [])
+      .filter((option) => {
+        const blob = `${option.label || ""} ${option.hint || ""}`.toLowerCase();
+        return blob.includes("whatsapp");
+      })
+      .map((option) => option.value);
+    if (!values.length) {
+      return null;
+    }
+    return { stepId: step.id, value: values };
+  }
+
+  return null;
+}
+
+async function advanceWizardToWhatsAppStep() {
+  let guard = 0;
+  while (wizardSessionId && currentWizardStep && guard < 8) {
+    const template = buildWizardTemplate(currentWizardStep);
+    if (template.intent === "whatsapp") {
+      setWhatsAppHelperStatus("WhatsApp step ready. Use QR below.");
+      return true;
+    }
+
+    const autoAnswer = getAutoWhatsAppBootstrapAnswer(currentWizardStep, template);
+    if (!autoAnswer) {
+      setWhatsAppHelperStatus("Cannot auto-advance to WhatsApp. Finish this wizard step in Onboarding, then return.");
+      return false;
+    }
+
+    const result = await window.openclaw.wizardNext(wizardSessionId, autoAnswer);
+    renderWizardResult(result);
+    if (result.done) {
+      break;
+    }
+    guard += 1;
+  }
+
+  if (wizardSessionId && currentWizardStep && buildWizardTemplate(currentWizardStep).intent === "whatsapp") {
+    setWhatsAppHelperStatus("WhatsApp step ready. Use QR below.");
+    return true;
+  }
+
+  setWhatsAppHelperStatus("WhatsApp step not reached yet. Refresh or open Onboarding wizard.");
+  return false;
+}
+
+async function startWhatsAppHelperFlow() {
+  if (wizardSessionId) {
+    await advanceWizardToWhatsAppStep();
+    return;
+  }
+
+  appendLog("Starting guided WhatsApp pairing...");
+  setWhatsAppHelperStatus("Starting guided WhatsApp pairing...");
+  clearWizardValidation();
+
+  if (!lastEnvironmentStatus || !lastEnvironmentStatus.gatewayRunning) {
+    const startResult = await window.openclaw.gatewayStart();
+    summarizeCommandResult("Gateway start", startResult);
+    await runEnvironmentCheck();
+  }
+
+  const workspacePath = byId("workspacePath").value.trim();
+  const params = workspacePath ? { mode: "local", workspace: workspacePath } : { mode: "local" };
+  const start = await window.openclaw.wizardStart(params);
+  renderWizardResult(start);
+
+  if (start.done) {
+    await handleWizardCompletion();
+    return;
+  }
+
+  await advanceWizardToWhatsAppStep();
 }
 
 async function startWizard() {
@@ -2589,6 +2917,7 @@ async function refreshWizardStatus(silent = false) {
 
   if (wizardPairingConnected && currentWizardQrRequired) {
     setWizardQrScanStatus(true, "Status: connected.");
+    setWhatsAppHelperStatus("WhatsApp connected.");
   }
   renderWizardPairingChecklist();
   renderWizardTelegramChecklist(currentWizardStep, currentWizardTemplate);
@@ -2602,6 +2931,7 @@ async function refreshWizardStatus(silent = false) {
 async function cancelWizard() {
   if (!wizardSessionId) {
     appendLog("No session to cancel.");
+    setWhatsAppHelperStatus("No active pairing session.");
     return;
   }
 
@@ -2609,6 +2939,7 @@ async function cancelWizard() {
   const status = await window.openclaw.wizardCancel(sessionToCancel);
   appendLog(`Wizard cancelled: ${status.status}`);
   resetWizardUi();
+  setWhatsAppHelperStatus("Pairing cancelled.");
 }
 
 function renderSetupProgressEvent(event) {
@@ -2664,6 +2995,16 @@ async function disableChannel(channel) {
   return status;
 }
 
+function refreshModelSelectForProvider(providerSelect, modelSelect) {
+  const catalog = getModelCatalogFromStatus(lastModelStatus);
+  syncModelSelectPair(
+    { provider: providerSelect, model: modelSelect },
+    catalog,
+    providerSelect.value,
+    ""
+  );
+}
+
 async function applyManagedModelSelection() {
   const provider = modelManagementElements.provider.value.trim();
   const model = modelManagementElements.model.value.trim();
@@ -2675,8 +3016,14 @@ async function applyManagedModelSelection() {
 
   const status = await window.openclaw.applyModelSelection(provider, model);
   renderModelManagementStatus(status);
-  byId("modelProvider").value = provider;
-  byId("modelName").value = model;
+  syncAllModelSelects({
+    onboardingProvider: provider,
+    onboardingModel: model,
+    manageProvider: provider,
+    manageModel: model,
+    settingsProvider: provider,
+    settingsModel: model
+  });
   appendLog(`Model applied: ${provider} / ${model}`);
 }
 
@@ -2743,6 +3090,89 @@ function wireControlEvents() {
     controlStatus.textContent = "Could not load embedded Control UI.";
     controlFallback.classList.remove("hidden");
     appendLog(`Control UI load failed (${event.errorCode}): ${event.errorDescription}`);
+  });
+}
+
+function shouldIgnoreShortcutTarget(target) {
+  if (!target || !(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tag = target.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || Boolean(target.isContentEditable);
+}
+
+function wireKeyboardShortcuts() {
+  window.addEventListener("keydown", (event) => {
+    const usesPrimaryModifier = event.ctrlKey || event.metaKey;
+    if (!usesPrimaryModifier || event.defaultPrevented) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    const isEditing = shouldIgnoreShortcutTarget(event.target);
+
+    if (key === ",") {
+      event.preventDefault();
+      if (!isOnboardingRequired()) {
+        setWorkspace("setup");
+        setFeaturePane("settings");
+      }
+      return;
+    }
+
+    if (key === "1") {
+      event.preventDefault();
+      if (!isOnboardingRequired()) {
+        void openChatWorkspace();
+      }
+      return;
+    }
+
+    if (key === "2") {
+      event.preventDefault();
+      if (!isOnboardingRequired()) {
+        setWorkspace("setup");
+        setFeaturePane("channels");
+      }
+      return;
+    }
+
+    if (key === "3") {
+      event.preventDefault();
+      if (!isOnboardingRequired()) {
+        setWorkspace("setup");
+        setFeaturePane("model");
+      }
+      return;
+    }
+
+    if (isEditing) {
+      return;
+    }
+
+    if (key === "r" && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      if (activeWorkspace === "chat") {
+        chatButtons.reload.click();
+      } else if (activeWorkspace === "control") {
+        controlButtons.reload.click();
+      } else {
+        byId("checkEnvButton").click();
+      }
+      return;
+    }
+
+    if (event.shiftKey && key === "g") {
+      event.preventDefault();
+      byId("gatewayStartButton").click();
+      return;
+    }
+
+    if (event.shiftKey && key === "s") {
+      event.preventDefault();
+      byId("gatewayStopButton").click();
+    }
   });
 }
 
@@ -2861,6 +3291,15 @@ function wireActions() {
       return;
     }
     setOnboardingStep("model");
+  });
+
+  onboardingElements.modelProvider.addEventListener("change", () => {
+    refreshModelSelectForProvider(onboardingElements.modelProvider, onboardingElements.modelName);
+    updateOnboardingUiFromState();
+  });
+
+  onboardingElements.modelName.addEventListener("change", () => {
+    updateOnboardingUiFromState();
   });
 
   onboardingElements.saveModel.addEventListener("click", async (event) => {
@@ -3058,6 +3497,10 @@ function wireActions() {
     await withBusy(button, saveConfig);
   });
 
+  settingsModelElements.provider.addEventListener("change", () => {
+    refreshModelSelectForProvider(settingsModelElements.provider, settingsModelElements.model);
+  });
+
   channelElements.refresh.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
@@ -3068,7 +3511,7 @@ function wireActions() {
   channelElements.whatsappReconnect.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      await reconnectChannel("whatsapp");
+      await startWhatsAppHelperFlow();
     });
   });
 
@@ -3098,6 +3541,10 @@ function wireActions() {
     await withBusy(button, async () => {
       await refreshModelManagementStatus(true);
     });
+  });
+
+  modelManagementElements.provider.addEventListener("change", () => {
+    refreshModelSelectForProvider(modelManagementElements.provider, modelManagementElements.model);
   });
 
   modelManagementElements.apply.addEventListener("click", async (event) => {
@@ -3138,6 +3585,34 @@ function wireActions() {
     await withBusy(button, async () => {
       await reconnectChannel("telegram");
     });
+  });
+
+  whatsappHelperElements.start.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await startWhatsAppHelperFlow();
+    });
+  });
+
+  whatsappHelperElements.continueStep.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await submitWizardStep();
+      await refreshChannelStatuses();
+    });
+  });
+
+  whatsappHelperElements.refresh.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await refreshWizardStatus();
+      await refreshChannelStatuses();
+    });
+  });
+
+  whatsappHelperElements.cancel.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, cancelWizard);
   });
 
   telegramHelperElements.copyBotFather.addEventListener("click", async (event) => {
@@ -3316,6 +3791,7 @@ async function bootstrap() {
 
     wireControlEvents();
     wireActions();
+    wireKeyboardShortcuts();
     resetWizardUi();
     setFeaturePane(activeFeaturePane);
     await refreshUpdateStatus();
