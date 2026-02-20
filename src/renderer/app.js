@@ -145,6 +145,7 @@ const telegramHelperElements = {
 
 const setupWorkspace = byId("setupWorkspace");
 const onboardingWorkspace = byId("onboardingWorkspace");
+const layoutNode = document.querySelector(".layout");
 const chatWorkspace = byId("chatWorkspace");
 const chatStatus = byId("chatStatus");
 const chatFallback = byId("chatFallback");
@@ -594,6 +595,9 @@ function setWorkspace(workspace) {
   setupWorkspace.classList.toggle("hidden", !showingSetup);
   chatWorkspace.classList.toggle("hidden", !showingChat);
   controlWorkspace.classList.toggle("hidden", !showingControl);
+  if (layoutNode) {
+    layoutNode.classList.toggle("onboarding-mode", showingOnboarding);
+  }
 
   workspaceButtons.showSetup.classList.toggle("primary", showingSetup);
   workspaceButtons.showChat.classList.toggle("primary", showingChat);

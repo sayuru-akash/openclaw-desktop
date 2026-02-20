@@ -24,7 +24,6 @@
           <button class="button feature-nav-button" data-feature-pane-target="channels">Channels</button>
           <button class="button feature-nav-button" data-feature-pane-target="model">Model</button>
           <button class="button feature-nav-button" data-feature-pane-target="files">Files</button>
-          <button class="button feature-nav-button" data-feature-pane-target="telegram">Telegram</button>
           <button class="button feature-nav-button" data-feature-pane-target="updates">Updates</button>
           <button class="button feature-nav-button" data-feature-pane-target="logs">Logs</button>
         </div>
@@ -385,6 +384,33 @@
                 </div>
               </article>
             </div>
+            <div class="divider"></div>
+            <div class="panel-header">
+              <h2>Telegram Helper</h2>
+              <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
+            </div>
+            <div class="telegram-helper">
+              <div class="helper-row">
+                <span>1. Open @BotFather</span>
+                <button id="copyBotFatherButton" class="button">Copy Link</button>
+              </div>
+              <div class="helper-row">
+                <span>2. Run command</span>
+                <button id="copyNewBotCommandButton" class="button">Copy `/newbot`</button>
+              </div>
+              <div class="helper-row">
+                <span>3. Token format</span>
+                <span class="panel-caption">`123456789:AA...`</span>
+              </div>
+              <label>
+                Bot Token
+                <input id="telegramHelperToken" type="text" placeholder="123456789:AA..." />
+              </label>
+              <p id="telegramHelperValidation" class="wizard-validation-message hidden"></p>
+              <div class="actions compact-actions">
+                <button id="telegramHelperSaveTokenButton" class="button">Save Token</button>
+              </div>
+            </div>
           </section>
 
           <section class="feature-pane hidden" data-feature-pane="model">
@@ -435,35 +461,6 @@
               </div>
               <p id="workspaceFileStatus" class="panel-caption">Select a file and click Load.</p>
             </form>
-          </section>
-
-          <section class="feature-pane hidden" data-feature-pane="telegram">
-            <div class="panel-header">
-              <h2>Telegram Helper</h2>
-              <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
-            </div>
-            <div class="telegram-helper">
-            <div class="helper-row">
-              <span>1. Open @BotFather</span>
-              <button id="copyBotFatherButton" class="button">Copy Link</button>
-            </div>
-            <div class="helper-row">
-              <span>2. Run command</span>
-              <button id="copyNewBotCommandButton" class="button">Copy `/newbot`</button>
-            </div>
-            <div class="helper-row">
-              <span>3. Token format</span>
-              <span class="panel-caption">`123456789:AA...`</span>
-            </div>
-            <label>
-              Bot Token
-              <input id="telegramHelperToken" type="text" placeholder="123456789:AA..." />
-            </label>
-            <p id="telegramHelperValidation" class="wizard-validation-message hidden"></p>
-              <div class="actions compact-actions">
-                <button id="telegramHelperSaveTokenButton" class="button">Save Token</button>
-              </div>
-            </div>
           </section>
 
           <section class="feature-pane hidden" data-feature-pane="logs">

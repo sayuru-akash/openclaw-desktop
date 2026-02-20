@@ -40,6 +40,21 @@ body {
   align-items: start;
 }
 
+.layout.onboarding-mode {
+  width: min(980px, 96vw);
+  grid-template-columns: 1fr;
+}
+
+.layout.onboarding-mode .hero {
+  display: none;
+}
+
+.layout.onboarding-mode #onboardingWorkspace {
+  grid-column: 1;
+  min-height: calc(100vh - 1.6rem);
+  max-height: calc(100vh - 1.6rem);
+}
+
 .hero {
   position: sticky;
   top: 0.8rem;

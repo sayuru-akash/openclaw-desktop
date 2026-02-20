@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f141d"/>
+      <stop offset="100%" stop-color="#0a1119"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <rect x="18" y="18" width="248" height="864" rx="14" fill="#121821" stroke="#223043"/>
+  <text x="36" y="52" fill="#20d56d" font-size="14" font-family="Arial, sans-serif" font-weight="700">OpenClaw Desktop</text>
+  <text x="36" y="76" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Setup. Connect. Run.</text>
+
+  <rect x="34" y="98" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="120" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Setup</text>
+  <rect x="34" y="138" width="216" height="34" rx="8" fill="#133b26" stroke="#22b663"/>
+  <text x="50" y="160" fill="#ebfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Chat</text>
+  <rect x="34" y="178" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="200" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Control</text>
+
+  <line x1="34" y1="236" x2="250" y2="236" stroke="#2a3a4f"/>
+  <text x="36" y="262" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">Feature Menu</text>
+  <rect x="34" y="276" width="216" height="30" rx="8" fill="#133b26" stroke="#22b663"/>
+  <text x="50" y="296" fill="#ebfff3" font-size="12" font-family="Arial, sans-serif" font-weight="700">Onboarding</text>
+  <rect x="34" y="312" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="332" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Settings</text>
+  <rect x="34" y="348" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="368" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Channels</text>
+  <rect x="34" y="384" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="404" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Model</text>
+  <rect x="34" y="420" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="440" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Files</text>
+  <rect x="34" y="456" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="476" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Telegram</text>
+  <rect x="34" y="492" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="512" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Updates</text>
+  <rect x="34" y="528" width="216" height="30" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="548" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Logs</text>
+
+  <rect x="284" y="18" width="1138" height="864" rx="14" fill="#111822" stroke="#223043"/>
+  <text x="312" y="52" fill="#edf3fb" font-size="26" font-family="Arial, sans-serif" font-weight="700">Chat</text>
+  <text x="312" y="76" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">Streamed replies inside the app</text>
+
+  <rect x="312" y="96" width="162" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="330" y="118" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Reload</text>
+  <rect x="484" y="96" width="162" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="502" y="118" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Start + Retry</text>
+  <rect x="656" y="96" width="178" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="674" y="118" fill="#dfe8f4" font-size="12" font-family="Arial, sans-serif">Open Full Control</text>
+
+  <rect x="312" y="146" width="1082" height="706" rx="10" fill="#0a1119" stroke="#253243"/>
+  <rect x="328" y="164" width="1050" height="632" rx="8" fill="#070d15" stroke="#1d2a3b"/>
+  <text x="352" y="194" fill="#8aa1be" font-size="13" font-family="Arial, sans-serif">Embedded OpenClaw WebChat</text>
+
+  <rect x="352" y="730" width="880" height="46" rx="10" fill="#111a26" stroke="#2f465f"/>
+  <text x="372" y="758" fill="#7f93ac" font-size="14" font-family="Arial, sans-serif">Message OpenClaw...</text>
+  <rect x="1244" y="730" width="118" height="46" rx="10" fill="#143c27" stroke="#22b663"/>
+  <text x="1285" y="758" fill="#ecfff3" font-size="14" font-family="Arial, sans-serif" font-weight="700">Send</text>
+</svg>

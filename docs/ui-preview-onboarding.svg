@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f141d"/>
+      <stop offset="100%" stop-color="#0a1119"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg2)"/>
+  <rect x="18" y="18" width="248" height="864" rx="14" fill="#121821" stroke="#223043"/>
+  <text x="36" y="52" fill="#20d56d" font-size="14" font-family="Arial, sans-serif" font-weight="700">OpenClaw Desktop</text>
+  <text x="36" y="76" fill="#8b98ac" font-size="12" font-family="Arial, sans-serif">First-time setup active</text>
+
+  <rect x="34" y="98" width="216" height="34" rx="8" fill="#133b26" stroke="#22b663"/>
+  <text x="50" y="120" fill="#ebfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Setup</text>
+  <rect x="34" y="138" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="160" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Chat</text>
+  <rect x="34" y="178" width="216" height="34" rx="8" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="50" y="200" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Control</text>
+
+  <rect x="284" y="18" width="1138" height="864" rx="14" fill="#111822" stroke="#223043"/>
+  <text x="312" y="54" fill="#edf3fb" font-size="24" font-family="Arial, sans-serif" font-weight="700">First-Time Setup</text>
+  <text x="312" y="78" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">Step 2 of 6 · Install WSL</text>
+
+  <rect x="312" y="104" width="1050" height="1" fill="#253243"/>
+
+  <text x="312" y="140" fill="#edf3fb" font-size="20" font-family="Arial, sans-serif" font-weight="700">Install WSL</text>
+  <text x="312" y="166" fill="#8ea0b7" font-size="14" font-family="Arial, sans-serif">Virtualization looks OFF in BIOS/UEFI. Enable Intel VT-x or AMD SVM, then retry.</text>
+
+  <rect x="312" y="192" width="180" height="38" rx="9" fill="#143c27" stroke="#22b663"/>
+  <text x="340" y="216" fill="#ecfff3" font-size="13" font-family="Arial, sans-serif" font-weight="700">Install WSL</text>
+  <rect x="502" y="192" width="140" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="548" y="216" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Recheck</text>
+  <rect x="652" y="192" width="170" height="38" rx="9" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="698" y="216" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Restart</text>
+
+  <rect x="312" y="260" width="1050" height="290" rx="12" fill="#0a1119" stroke="#253243"/>
+  <text x="336" y="292" fill="#edf3fb" font-size="16" font-family="Arial, sans-serif" font-weight="700">Live Setup Log</text>
+  <text x="336" y="318" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:42:11] Setup [installing_wsl] Requesting admin approval to install WSL.</text>
+  <text x="336" y="342" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:42:17] Setup [stdout] Downloading required WSL components...</text>
+  <text x="336" y="366" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:42:41] Setup [stdout] Enabling Virtual Machine Platform...</text>
+  <text x="336" y="390" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:43:09] Setup [warning] Restart required to complete WSL installation.</text>
+  <text x="336" y="414" fill="#8aa1be" font-size="12" font-family="Arial, sans-serif">[10:43:10] Setup [awaiting_reboot] Restart Windows to continue setup.</text>
+
+  <rect x="312" y="574" width="270" height="40" rx="9" fill="#1a2432" stroke="#2c3a4e"/>
+  <text x="338" y="599" fill="#dfe8f4" font-size="13" font-family="Arial, sans-serif">Continue to OpenClaw Install</text>
+</svg>
