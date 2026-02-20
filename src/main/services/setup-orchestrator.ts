@@ -100,12 +100,16 @@ export class SetupOrchestrator extends EventEmitter {
         await this.startupService.clearResumeOnLogin();
       }
 
+      const virtualizationHint = environmentStatus.notes.some((note) => note.toLowerCase().includes("virtualization"))
+        ? "BIOS/UEFI virtualization appears disabled. Enable Intel VT-x/AMD SVM, restart Windows, then retry."
+        : "WSL install failed or was cancelled. Retry to continue.";
+
       return this.saveState(
         {
           stage: "failed",
           requiresReboot: false,
           resumeOnLogin: false,
-          message: "WSL install failed or was cancelled. Retry to continue."
+          message: virtualizationHint
         },
         "error"
       );

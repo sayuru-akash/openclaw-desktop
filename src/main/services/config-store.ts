@@ -7,7 +7,9 @@ const defaultConfig: AppConfig = {
   workspacePath: "",
   modelProvider: "",
   modelName: "",
+  modelApiKey: "",
   autoStartGateway: true,
+  onboardingCompleted: false,
   updatedAt: new Date(0).toISOString()
 };
 
@@ -27,7 +29,9 @@ export class ConfigStore {
         workspacePath: parsed.workspacePath ?? defaultConfig.workspacePath,
         modelProvider: parsed.modelProvider ?? defaultConfig.modelProvider,
         modelName: parsed.modelName ?? defaultConfig.modelName,
+        modelApiKey: parsed.modelApiKey ?? defaultConfig.modelApiKey,
         autoStartGateway: parsed.autoStartGateway ?? defaultConfig.autoStartGateway,
+        onboardingCompleted: parsed.onboardingCompleted ?? defaultConfig.onboardingCompleted,
         updatedAt: parsed.updatedAt ?? defaultConfig.updatedAt
       };
     } catch {

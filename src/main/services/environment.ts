@@ -44,6 +44,11 @@ export class EnvironmentService {
       return status;
     }
 
+    const virtualizationWarning = await this.getVirtualizationWarning();
+    if (virtualizationWarning) {
+      status.notes.push(virtualizationWarning);
+    }
+
     const windowsBuild = parseWindowsBuildFromRelease(os.release());
     if (!isWindowsBuildSupported(windowsBuild)) {
       status.notes.push("Windows build may be too old for seamless WSL setup. Prefer Windows 10 build 19041+ or Windows 11.");
@@ -372,6 +377,27 @@ export class EnvironmentService {
 
   private runInWsl(command: string): Promise<CommandResult> {
     return runCommand("wsl.exe", ["bash", "-lc", command]);
+  }
+
+  private async getVirtualizationWarning(): Promise<string> {
+    const result = await runCommand("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty VirtualizationFirmwareEnabled | Select-Object -First 1)"
+    ]);
+
+    if (!result.ok) {
+      return "";
+    }
+
+    const value = `${result.stdout}\n${result.stderr}`.trim().toLowerCase();
+    if (value.includes("false")) {
+      return "BIOS/UEFI virtualization looks disabled. Enable Intel VT-x or AMD SVM in BIOS/UEFI, then restart Windows.";
+    }
+
+    return "";
   }
 
   private async readChannelStatus(channel: ManagedChannel): Promise<ChannelStatusItem> {

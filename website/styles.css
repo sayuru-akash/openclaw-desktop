@@ -467,6 +467,13 @@ h1 {
   color: var(--muted);
 }
 
+.download-compat-note {
+  margin: 12px auto 0;
+  max-width: 760px;
+  font-size: 14px;
+  color: #3b5780;
+}
+
 .final-cta small {
   display: block;
   margin-top: 12px;

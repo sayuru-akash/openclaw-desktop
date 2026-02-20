@@ -299,6 +299,17 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("env:install-wsl", () => environmentService.installWsl());
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
+  ipcMain.handle("env:install-openclaw-stream", () =>
+    environmentService.installOpenClawStreaming((line, stream) => {
+      broadcastSetupProgress({
+        timestamp: new Date().toISOString(),
+        stage: "installing_openclaw",
+        level: stream === "stderr" ? "warning" : "info",
+        source: stream,
+        message: line
+      });
+    })
+  );
   ipcMain.handle("env:run-onboarding", () => environmentService.runOnboarding());
 
   ipcMain.handle("gateway:status", async () => {
@@ -308,6 +319,19 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("gateway:start", async () => {
     const result = await environmentService.gatewayStart();
+    await refreshTrayGatewayStatus(false);
+    return result;
+  });
+  ipcMain.handle("gateway:start-stream", async () => {
+    const result = await environmentService.gatewayStartStreaming((line, stream) => {
+      broadcastSetupProgress({
+        timestamp: new Date().toISOString(),
+        stage: "starting_gateway",
+        level: stream === "stderr" ? "warning" : "info",
+        source: stream,
+        message: line
+      });
+    });
     await refreshTrayGatewayStatus(false);
     return result;
   });

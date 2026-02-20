@@ -37,6 +37,9 @@ const workspaceButtons = {
   showChat: byId("showChatButton"),
   showControl: byId("showControlButton")
 };
+const featureSwitchPanel = document.querySelector(".feature-switcher");
+const featurePaneButtons = [...document.querySelectorAll("[data-feature-pane-target]")];
+const featurePanes = [...document.querySelectorAll("[data-feature-pane]")];
 
 const chatButtons = {
   reload: byId("reloadChatButton"),
@@ -141,6 +144,7 @@ const telegramHelperElements = {
 };
 
 const setupWorkspace = byId("setupWorkspace");
+const onboardingWorkspace = byId("onboardingWorkspace");
 const chatWorkspace = byId("chatWorkspace");
 const chatStatus = byId("chatStatus");
 const chatFallback = byId("chatFallback");
@@ -152,10 +156,45 @@ const controlWebview = byId("controlWebview");
 const notesList = byId("notesList");
 const logOutput = byId("logOutput");
 
+const onboardingElements = {
+  progress: byId("onboardingProgress"),
+  openAdvanced: byId("onboardingOpenAdvancedButton"),
+  begin: byId("onboardingBeginButton"),
+  wslStatus: byId("onboardingWslStatus"),
+  installWsl: byId("onboardingInstallWslButton"),
+  recheckWsl: byId("onboardingRecheckWslButton"),
+  restart: byId("onboardingRestartButton"),
+  continueOpenClaw: byId("onboardingContinueToOpenClawButton"),
+  openclawStatus: byId("onboardingOpenClawStatus"),
+  installOpenClaw: byId("onboardingInstallOpenClawButton"),
+  recheckOpenClaw: byId("onboardingRecheckOpenClawButton"),
+  continueGateway: byId("onboardingContinueToGatewayButton"),
+  gatewayStatus: byId("onboardingGatewayStatus"),
+  startGateway: byId("onboardingStartGatewayButton"),
+  recheckGateway: byId("onboardingRecheckGatewayButton"),
+  continueModel: byId("onboardingContinueToModelButton"),
+  modelStatus: byId("onboardingModelStatus"),
+  modelProvider: byId("onboardingModelProvider"),
+  modelName: byId("onboardingModelName"),
+  modelApiKey: byId("onboardingModelApiKey"),
+  saveModel: byId("onboardingSaveModelButton"),
+  recheckModel: byId("onboardingRecheckModelButton"),
+  continueDone: byId("onboardingContinueToDoneButton"),
+  finish: byId("onboardingFinishButton"),
+  logOutput: byId("onboardingLogOutput")
+};
+
+const onboardingStepNodes = [...document.querySelectorAll("[data-onboarding-step]")];
+const ONBOARDING_STEP_ORDER = ["welcome", "wsl", "openclaw", "gateway", "model", "done"];
+
 let lastEnvironmentStatus = null;
 let lastSetupState = null;
+let appConfig = null;
 let activeWorkspace = "setup";
+let activeFeaturePane = "onboarding";
+let activeOnboardingStep = "welcome";
 let chatTabSelectionTimer = null;
+let onboardingLogLines = [];
 let removeSetupProgressListener = null;
 let removeUpdateStatusListener = null;
 let lastAlwaysOnGatewayStatus = null;
@@ -200,6 +239,13 @@ function setStatus(element, label, tone) {
 function appendLog(message) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
   logOutput.textContent = `${line}\n${logOutput.textContent}`;
+  onboardingLogLines.unshift(line);
+  if (onboardingLogLines.length > 90) {
+    onboardingLogLines = onboardingLogLines.slice(0, 90);
+  }
+  if (onboardingElements.logOutput) {
+    onboardingElements.logOutput.textContent = onboardingLogLines.join("\n");
+  }
 }
 
 function summarizeCommandResult(title, result) {
@@ -413,12 +459,138 @@ function setupStageTone(stage) {
   return "warn";
 }
 
+function setFeaturePane(nextPane) {
+  activeFeaturePane = nextPane;
+
+  featurePanes.forEach((pane) => {
+    const isActive = pane.dataset.featurePane === nextPane;
+    pane.classList.toggle("hidden", !isActive);
+  });
+
+  featurePaneButtons.forEach((button) => {
+    const isActive = button.dataset.featurePaneTarget === nextPane;
+    button.classList.toggle("primary", isActive);
+  });
+}
+
+function getOnboardingStepIndex(stepKey) {
+  const index = ONBOARDING_STEP_ORDER.indexOf(stepKey);
+  return index >= 0 ? index : 0;
+}
+
+function setOnboardingStep(stepKey) {
+  activeOnboardingStep = ONBOARDING_STEP_ORDER.includes(stepKey) ? stepKey : "welcome";
+  const stepIndex = getOnboardingStepIndex(activeOnboardingStep);
+  onboardingElements.progress.textContent = `Step ${stepIndex + 1} of ${ONBOARDING_STEP_ORDER.length}`;
+
+  onboardingStepNodes.forEach((node) => {
+    const isActive = node.dataset.onboardingStep === activeOnboardingStep;
+    node.classList.toggle("hidden", !isActive);
+  });
+}
+
+function isOnboardingRequired() {
+  return Boolean(!appConfig || !appConfig.onboardingCompleted);
+}
+
+function updateOnboardingUiFromState() {
+  const status = lastEnvironmentStatus;
+  const setupState = lastSetupState;
+  const virtualizationWarning = Boolean(
+    status && Array.isArray(status.notes) && status.notes.some((note) => String(note).toLowerCase().includes("virtualization"))
+  );
+
+  if (!status) {
+    onboardingElements.wslStatus.textContent = "Checking WSL status...";
+    onboardingElements.openclawStatus.textContent = "Checking OpenClaw status...";
+    onboardingElements.gatewayStatus.textContent = "Checking gateway status...";
+    return;
+  }
+
+  if (!status.isWindows) {
+    onboardingElements.wslStatus.textContent = "This onboarding flow requires Windows.";
+  } else if (virtualizationWarning) {
+    onboardingElements.wslStatus.textContent =
+      "Virtualization looks OFF in BIOS/UEFI. Restart PC, open BIOS (F2/Del/Esc), enable Intel VT-x or AMD SVM, save, then retry.";
+  } else if (setupState && setupState.requiresReboot) {
+    onboardingElements.wslStatus.textContent = "Restart required. Reopen app after restart, then recheck.";
+  } else if (status.wslInstalled && status.distroInstalled) {
+    onboardingElements.wslStatus.textContent = "WSL is ready.";
+  } else if (status.wslInstalled && !status.distroInstalled) {
+    onboardingElements.wslStatus.textContent = "WSL installed. Open Ubuntu once to initialize distro, then recheck.";
+  } else {
+    onboardingElements.wslStatus.textContent = "WSL not installed yet.";
+  }
+
+  onboardingElements.openclawStatus.textContent = status.openClawInstalled
+    ? "OpenClaw is installed."
+    : "OpenClaw not installed yet.";
+
+  onboardingElements.gatewayStatus.textContent = status.gatewayRunning
+    ? "Gateway is running."
+    : "Gateway is not running yet.";
+
+  const modelProvider = (appConfig && appConfig.modelProvider) || (lastModelStatus && lastModelStatus.provider) || "";
+  const modelName = (appConfig && appConfig.modelName) || (lastModelStatus && lastModelStatus.model) || "";
+
+  if (!onboardingElements.modelProvider.value && modelProvider) {
+    onboardingElements.modelProvider.value = modelProvider;
+  }
+  if (!onboardingElements.modelName.value && modelName) {
+    onboardingElements.modelName.value = modelName;
+  }
+  if (!onboardingElements.modelApiKey.value && appConfig && appConfig.modelApiKey) {
+    onboardingElements.modelApiKey.value = appConfig.modelApiKey;
+  }
+
+  onboardingElements.modelStatus.textContent = modelProvider && modelName
+    ? `Current: ${modelProvider} / ${modelName}`
+    : "Set provider, model, and API key.";
+
+  onboardingElements.continueOpenClaw.disabled = !(status.wslInstalled && status.distroInstalled);
+  onboardingElements.continueGateway.disabled = !status.openClawInstalled;
+  onboardingElements.continueModel.disabled = !status.gatewayRunning;
+  onboardingElements.continueDone.disabled = !(modelProvider && modelName);
+}
+
+function getSuggestedOnboardingStep() {
+  const status = lastEnvironmentStatus;
+  if (!status || !status.isWindows || !status.wslInstalled || !status.distroInstalled) {
+    return "wsl";
+  }
+
+  if (!status.openClawInstalled) {
+    return "openclaw";
+  }
+
+  if (!status.gatewayRunning) {
+    return "gateway";
+  }
+
+  const modelProvider = (appConfig && appConfig.modelProvider) || (lastModelStatus && lastModelStatus.provider) || "";
+  const modelName = (appConfig && appConfig.modelName) || (lastModelStatus && lastModelStatus.model) || "";
+  if (!modelProvider || !modelName) {
+    return "model";
+  }
+
+  return "done";
+}
+
+function switchToOnboardingIfNeeded() {
+  if (isOnboardingRequired()) {
+    setWorkspace("onboarding");
+    updateOnboardingUiFromState();
+  }
+}
+
 function setWorkspace(workspace) {
   activeWorkspace = workspace;
+  const showingOnboarding = workspace === "onboarding";
   const showingSetup = workspace === "setup";
   const showingChat = workspace === "chat";
   const showingControl = workspace === "control";
 
+  onboardingWorkspace.classList.toggle("hidden", !showingOnboarding);
   setupWorkspace.classList.toggle("hidden", !showingSetup);
   chatWorkspace.classList.toggle("hidden", !showingChat);
   controlWorkspace.classList.toggle("hidden", !showingControl);
@@ -426,6 +598,9 @@ function setWorkspace(workspace) {
   workspaceButtons.showSetup.classList.toggle("primary", showingSetup);
   workspaceButtons.showChat.classList.toggle("primary", showingChat);
   workspaceButtons.showControl.classList.toggle("primary", showingControl);
+  if (featureSwitchPanel) {
+    featureSwitchPanel.classList.toggle("hidden", !showingSetup);
+  }
 
   if (!showingChat && chatTabSelectionTimer) {
     clearTimeout(chatTabSelectionTimer);
@@ -527,6 +702,11 @@ function updateChatSurface(ensureChatTab = false) {
 }
 
 function maybeAutoHandoffToChat() {
+  if (isOnboardingRequired()) {
+    switchToOnboardingIfNeeded();
+    return;
+  }
+
   if (!isGatewayReady(lastEnvironmentStatus)) {
     if (activeWorkspace === "chat") {
       updateChatSurface(false);
@@ -550,6 +730,7 @@ function renderSetupState(setupState) {
   lastSetupState = setupState;
   setStatus(statusElements.setupStage, setupStageLabel(setupState.stage), setupStageTone(setupState.stage));
   applyActionAvailability(lastEnvironmentStatus, setupState);
+  updateOnboardingUiFromState();
 }
 
 function renderEnvironment(status) {
@@ -562,6 +743,7 @@ function renderEnvironment(status) {
   setStatus(statusElements.gateway, status.gatewayRunning ? "Running" : "Stopped", status.gatewayRunning ? "ok" : "warn");
   renderNotes(status.notes);
   applyActionAvailability(status, lastSetupState);
+  updateOnboardingUiFromState();
   maybeAutoHandoffToChat();
 }
 
@@ -719,19 +901,44 @@ async function withBusy(button, task) {
   }
 }
 
+async function withInlineProgress(statusNode, label, task) {
+  if (!statusNode) {
+    return task();
+  }
+
+  let tick = 0;
+  statusNode.textContent = `${label}...`;
+  const timer = setInterval(() => {
+    tick = (tick + 1) % 4;
+    const dots = ".".repeat(tick || 1);
+    statusNode.textContent = `${label}${dots}`;
+  }, 450);
+
+  try {
+    return await task();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 async function loadConfig() {
   const config = await window.openclaw.loadConfig();
+  appConfig = config;
   byId("profileName").value = config.profileName;
   byId("workspacePath").value = config.workspacePath;
   byId("modelProvider").value = config.modelProvider || "";
   byId("modelName").value = config.modelName || "";
   byId("autoStartGateway").checked = Boolean(config.autoStartGateway);
+  onboardingElements.modelProvider.value = config.modelProvider || "";
+  onboardingElements.modelName.value = config.modelName || "";
+  onboardingElements.modelApiKey.value = config.modelApiKey || "";
   if (config.modelProvider) {
     wizardModelProvider = config.modelProvider;
   }
   if (config.modelName) {
     wizardModelName = config.modelName;
   }
+  updateOnboardingUiFromState();
   appendLog("Configuration loaded.");
 }
 
@@ -750,6 +957,8 @@ async function saveConfig() {
     autoStartGateway
   });
 
+  appConfig = config;
+  updateOnboardingUiFromState();
   appendLog(`Configuration saved (${config.updatedAt}).`);
 }
 
@@ -799,6 +1008,47 @@ async function saveWorkspaceFile(logMessage = false) {
   }
 
   return payload;
+}
+
+async function saveOnboardingModelSelection() {
+  const provider = onboardingElements.modelProvider.value.trim();
+  const model = onboardingElements.modelName.value.trim();
+  const apiKey = onboardingElements.modelApiKey.value.trim();
+
+  if (!provider || !model) {
+    onboardingElements.modelStatus.textContent = "Provider and model are required.";
+    return false;
+  }
+
+  if (apiKey.length < 8) {
+    onboardingElements.modelStatus.textContent = "API key looks too short.";
+    return false;
+  }
+
+  const applied = await window.openclaw.applyModelSelection(provider, model);
+  const savedConfig = await window.openclaw.saveConfig({
+    modelProvider: provider,
+    modelName: model,
+    modelApiKey: apiKey
+  });
+  appConfig = savedConfig;
+  renderModelManagementStatus(applied);
+  byId("modelProvider").value = provider;
+  byId("modelName").value = model;
+  onboardingElements.modelStatus.textContent = `Saved: ${provider} / ${model}`;
+  updateOnboardingUiFromState();
+  appendLog(`Onboarding model saved: ${provider} / ${model}`);
+  return true;
+}
+
+async function setOnboardingCompletedAndOpenChat() {
+  const savedConfig = await window.openclaw.saveConfig({
+    onboardingCompleted: true
+  });
+  appConfig = savedConfig;
+  appendLog("Onboarding completed.");
+  setWorkspace("chat");
+  await openChatWorkspace();
 }
 
 async function runEnvironmentCheck() {
@@ -2493,17 +2743,194 @@ function wireControlEvents() {
 }
 
 function wireActions() {
+  onboardingElements.openAdvanced.addEventListener("click", () => {
+    setWorkspace("setup");
+    setFeaturePane("onboarding");
+  });
+
+  onboardingElements.begin.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await runEnvironmentCheck();
+      await refreshSetupState();
+      setOnboardingStep(getSuggestedOnboardingStep());
+    });
+  });
+
+  onboardingElements.installWsl.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      appendLog("Onboarding: installing WSL...");
+      const setupState = await withInlineProgress(
+        onboardingElements.wslStatus,
+        "Installing WSL (admin prompt may appear)",
+        () => window.openclaw.startWslSetup()
+      );
+      renderSetupState(setupState);
+      await runEnvironmentCheck();
+      await refreshSetupState();
+      setOnboardingStep("wsl");
+    });
+  });
+
+  onboardingElements.recheckWsl.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await runEnvironmentCheck();
+      await refreshSetupState();
+    });
+  });
+
+  onboardingElements.restart.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      const result = await window.openclaw.restartForSetup();
+      summarizeCommandResult("Restart request", result);
+    });
+  });
+
+  onboardingElements.continueOpenClaw.addEventListener("click", () => {
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.wslInstalled && lastEnvironmentStatus.distroInstalled)) {
+      onboardingElements.wslStatus.textContent = "Finish WSL setup before continuing.";
+      return;
+    }
+    setOnboardingStep("openclaw");
+  });
+
+  onboardingElements.installOpenClaw.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      appendLog("Onboarding: installing OpenClaw...");
+      const result = await withInlineProgress(
+        onboardingElements.openclawStatus,
+        "Installing OpenClaw (this can take a few minutes)",
+        () => window.openclaw.installOpenClawStreaming()
+      );
+      summarizeCommandResult("OpenClaw install", result);
+      await runEnvironmentCheck();
+      await refreshSetupState();
+    });
+  });
+
+  onboardingElements.recheckOpenClaw.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await runEnvironmentCheck();
+      await refreshSetupState();
+    });
+  });
+
+  onboardingElements.continueGateway.addEventListener("click", () => {
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.openClawInstalled)) {
+      onboardingElements.openclawStatus.textContent = "Install OpenClaw first.";
+      return;
+    }
+    setOnboardingStep("gateway");
+  });
+
+  onboardingElements.startGateway.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      appendLog("Onboarding: starting gateway...");
+      const result = await withInlineProgress(
+        onboardingElements.gatewayStatus,
+        "Starting gateway",
+        () => window.openclaw.gatewayStartStreaming()
+      );
+      summarizeCommandResult("Gateway start", result);
+      await runEnvironmentCheck();
+      await refreshSetupState();
+    });
+  });
+
+  onboardingElements.recheckGateway.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await runEnvironmentCheck();
+      await refreshSetupState();
+    });
+  });
+
+  onboardingElements.continueModel.addEventListener("click", () => {
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.gatewayRunning)) {
+      onboardingElements.gatewayStatus.textContent = "Start gateway first.";
+      return;
+    }
+    setOnboardingStep("model");
+  });
+
+  onboardingElements.saveModel.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await withInlineProgress(
+        onboardingElements.modelStatus,
+        "Saving model",
+        () => saveOnboardingModelSelection()
+      );
+      await refreshModelManagementStatus();
+    });
+  });
+
+  onboardingElements.recheckModel.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, async () => {
+      await refreshModelManagementStatus();
+      await loadConfig();
+      updateOnboardingUiFromState();
+    });
+  });
+
+  onboardingElements.continueDone.addEventListener("click", () => {
+    const provider = onboardingElements.modelProvider.value.trim();
+    const model = onboardingElements.modelName.value.trim();
+    if (!provider || !model) {
+      onboardingElements.modelStatus.textContent = "Save model first.";
+      return;
+    }
+    setOnboardingStep("done");
+  });
+
+  onboardingElements.finish.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    await withBusy(button, setOnboardingCompletedAndOpenChat);
+  });
+
+  featurePaneButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.featurePaneTarget || "onboarding";
+      if (activeWorkspace !== "setup") {
+        setWorkspace("setup");
+      }
+      setFeaturePane(target);
+    });
+  });
+
   workspaceButtons.showSetup.addEventListener("click", () => {
+    if (isOnboardingRequired()) {
+      setOnboardingStep(getSuggestedOnboardingStep());
+      setWorkspace("onboarding");
+      return;
+    }
     setWorkspace("setup");
   });
 
   workspaceButtons.showChat.addEventListener("click", async (event) => {
     const button = event.currentTarget;
+    if (isOnboardingRequired()) {
+      setOnboardingStep(getSuggestedOnboardingStep());
+      setWorkspace("onboarding");
+      return;
+    }
     await withBusy(button, openChatWorkspace);
   });
 
   workspaceButtons.showControl.addEventListener("click", async (event) => {
     const button = event.currentTarget;
+    if (isOnboardingRequired()) {
+      setOnboardingStep(getSuggestedOnboardingStep());
+      setWorkspace("onboarding");
+      return;
+    }
     await withBusy(button, openControlWorkspace);
   });
 
@@ -2886,12 +3313,19 @@ async function bootstrap() {
     wireControlEvents();
     wireActions();
     resetWizardUi();
+    setFeaturePane(activeFeaturePane);
     await refreshUpdateStatus();
     await loadConfig();
     await refreshSetupState(true);
     await runEnvironmentCheck();
-    setWorkspace("setup");
-    maybeAutoHandoffToChat();
+    if (isOnboardingRequired()) {
+      setOnboardingStep("welcome");
+      setWorkspace("onboarding");
+      updateOnboardingUiFromState();
+    } else {
+      setWorkspace("chat");
+      maybeAutoHandoffToChat();
+    }
   } catch (error) {
     appendLog(`Bootstrap error: ${formatError(error)}`);
   }

@@ -166,7 +166,9 @@ export interface AppConfig {
   workspacePath: string;
   modelProvider: string;
   modelName: string;
+  modelApiKey: string;
   autoStartGateway: boolean;
+  onboardingCompleted: boolean;
   updatedAt: string;
 }
 
@@ -192,9 +194,11 @@ export interface RendererApi {
   onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
   installWsl: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
+  installOpenClawStreaming: () => Promise<CommandResult>;
   runOnboarding: () => Promise<CommandResult>;
   gatewayStatus: () => Promise<CommandResult>;
   gatewayStart: () => Promise<CommandResult>;
+  gatewayStartStreaming: () => Promise<CommandResult>;
   gatewayStop: () => Promise<CommandResult>;
   loadConfig: () => Promise<AppConfig>;
   saveConfig: (config: Partial<AppConfig>) => Promise<AppConfig>;

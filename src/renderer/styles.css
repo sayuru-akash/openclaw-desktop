@@ -25,13 +25,33 @@ body {
     radial-gradient(circle at 90% 0%, rgba(51, 118, 255, 0.14), transparent 40%),
     var(--bg);
   color: var(--text);
+  overflow: hidden;
 }
 
 .layout {
-  width: min(1200px, 95vw);
+  width: min(1420px, 96vw);
   margin: 0 auto;
-  padding: 1.3rem 0 2rem;
+  height: 100vh;
+  padding: 0.8rem 0;
   animation: ui-fade 0.28s ease-out;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.hero {
+  position: sticky;
+  top: 0.8rem;
+  border: 1px solid var(--panel-border);
+  background: linear-gradient(180deg, rgba(18, 24, 33, 0.95), rgba(13, 18, 27, 0.94));
+  border-radius: 16px;
+  padding: 0.85rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 14px 30px rgba(1, 4, 8, 0.35);
+  max-height: calc(100vh - 1.6rem);
+  overflow: auto;
 }
 
 .hero h1 {
@@ -57,22 +77,60 @@ body {
 }
 
 .workspace-switcher {
-  margin-top: 0.85rem;
-  display: flex;
-  gap: 0.45rem;
-  width: fit-content;
-  padding: 0.25rem;
-  border-radius: 12px;
-  border: 1px solid var(--panel-border);
-  background: rgba(15, 21, 30, 0.78);
-  backdrop-filter: blur(6px);
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.42rem;
+  width: 100%;
+}
+
+.workspace-switcher .button {
+  width: 100%;
+}
+
+.feature-switcher {
+  margin-top: 0.82rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--panel-border);
+  display: grid;
+  gap: 0.42rem;
+}
+
+.feature-nav-button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
 }
 
 .grid {
-  margin-top: 1rem;
+  margin-top: 0;
   display: grid;
   gap: 1rem;
-  grid-template-columns: 1.55fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#onboardingWorkspace,
+#setupWorkspace,
+#chatWorkspace,
+#controlWorkspace {
+  grid-column: 2;
+  min-height: calc(100vh - 1.6rem);
+  max-height: calc(100vh - 1.6rem);
+}
+
+#onboardingWorkspace {
+  display: flex;
+}
+
+#onboardingWorkspace > .panel {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  height: 100%;
+  overflow: auto;
+}
+
+#setupWorkspace > .panel {
+  height: 100%;
+  overflow: auto;
 }
 
 .panel {
@@ -254,7 +312,8 @@ label {
   color: var(--muted);
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   border: 1px solid #283445;
   background: #0b1119;
   color: var(--text);
@@ -264,6 +323,7 @@ input[type="text"] {
 }
 
 input[type="text"]:focus,
+input[type="password"]:focus,
 select:focus,
 textarea:focus,
 .wizard-input-container input[type="text"]:focus,
@@ -328,11 +388,15 @@ textarea {
 }
 
 .control-workspace {
-  margin-top: 1.4rem;
+  margin-top: 0;
 }
 
 .control-panel {
-  min-height: 68vh;
+  min-height: 0;
+  height: calc(100vh - 1.6rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .control-status-wrap {
@@ -353,7 +417,9 @@ textarea {
 
 .control-webview {
   width: 100%;
-  min-height: 62vh;
+  min-height: 0;
+  height: auto;
+  flex: 1;
   border: 1px solid #263243;
   border-radius: 12px;
   background: #090f16;
@@ -700,6 +766,61 @@ textarea {
   opacity: 0.78;
 }
 
+.feature-pane + .feature-pane {
+  margin-top: 0;
+}
+
+.onboarding-header {
+  margin-bottom: 0.5rem;
+}
+
+.onboarding-step h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+}
+
+.onboarding-step p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.onboarding-list {
+  margin: 0.7rem 0 0;
+  padding-left: 1.1rem;
+  color: #9bb0c9;
+  font-size: 0.85rem;
+}
+
+.onboarding-list li + li {
+  margin-top: 0.28rem;
+}
+
+.onboarding-step .actions {
+  margin-top: 0.8rem;
+}
+
+.onboarding-log-wrap {
+  margin-top: 0.9rem;
+  border-top: 1px solid #274059;
+  padding-top: 0.75rem;
+}
+
+.onboarding-log {
+  margin: 0;
+  min-height: 130px;
+  max-height: 180px;
+  overflow: auto;
+  background: #070d17;
+  border: 1px solid #2a3f55;
+  border-radius: 10px;
+  padding: 0.62rem;
+  color: #8bb8ff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
 @keyframes ui-fade {
   from {
     opacity: 0;
@@ -721,8 +842,47 @@ textarea {
 }
 
 @media (max-width: 1050px) {
+  body {
+    overflow: auto;
+  }
+
+  .layout {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    position: static;
+    max-height: none;
+  }
+
+  #setupWorkspace,
+  #onboardingWorkspace,
+  #chatWorkspace,
+  #controlWorkspace {
+    grid-column: 1;
+    min-height: 0;
+    max-height: none;
+  }
+
+  #onboardingWorkspace > .panel,
+  #setupWorkspace > .panel {
+    height: auto;
+    overflow: visible;
+  }
+
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .control-panel {
+    height: auto;
+    overflow: visible;
+  }
+
+  .control-webview {
+    min-height: 62vh;
+    flex: none;
   }
 
   .actions {
@@ -730,7 +890,7 @@ textarea {
   }
 
   .workspace-switcher {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .status-grid {

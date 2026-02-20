@@ -8,6 +8,8 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
 
 - Detect Windows + WSL + distro + `systemd` + OpenClaw CLI + gateway status.
 - Run setup actions from UI:
+  - First-run onboarding flow (Welcome -> WSL -> OpenClaw -> Gateway -> Model/API -> Chat handoff)
+  - Advanced setup controls remain available outside onboarding for troubleshooting
   - One-click guided setup (`Run Guided Setup`) that chains WSL install, OpenClaw install, and gateway readiness for onboarding
   - Live setup progress stream (stage + command output) from main process to renderer
   - In-app onboarding wizard rendered from OpenClaw Gateway RPC (`wizard.start`, `wizard.next`, `wizard.status`, `wizard.cancel`)

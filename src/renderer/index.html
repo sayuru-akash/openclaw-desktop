@@ -17,7 +17,122 @@
           <button id="showChatButton" class="button">Chat</button>
           <button id="showControlButton" class="button">Control</button>
         </div>
+        <div class="feature-switcher">
+          <p class="subhead">Feature Menu</p>
+          <button class="button feature-nav-button primary" data-feature-pane-target="onboarding">Onboarding</button>
+          <button class="button feature-nav-button" data-feature-pane-target="settings">Settings</button>
+          <button class="button feature-nav-button" data-feature-pane-target="channels">Channels</button>
+          <button class="button feature-nav-button" data-feature-pane-target="model">Model</button>
+          <button class="button feature-nav-button" data-feature-pane-target="files">Files</button>
+          <button class="button feature-nav-button" data-feature-pane-target="telegram">Telegram</button>
+          <button class="button feature-nav-button" data-feature-pane-target="updates">Updates</button>
+          <button class="button feature-nav-button" data-feature-pane-target="logs">Logs</button>
+        </div>
       </header>
+
+      <main id="onboardingWorkspace" class="onboarding-workspace hidden">
+        <section class="panel onboarding-panel">
+          <div class="panel-header onboarding-header">
+            <div>
+              <h2>First-Time Setup</h2>
+              <p id="onboardingProgress" class="panel-caption">Step 1 of 6</p>
+            </div>
+            <button id="onboardingOpenAdvancedButton" class="button">Advanced View</button>
+          </div>
+
+          <section class="onboarding-step" data-onboarding-step="welcome">
+            <h3>Welcome</h3>
+            <p>This flow installs WSL, installs OpenClaw, starts the gateway, and sets your first model.</p>
+            <ul class="onboarding-list">
+              <li>Admin prompt may appear during WSL install.</li>
+              <li>A reboot may be required once.</li>
+              <li>Setup resumes after restart.</li>
+            </ul>
+            <div class="actions compact-actions">
+              <button id="onboardingBeginButton" class="button primary">Start Setup</button>
+            </div>
+          </section>
+
+          <section class="onboarding-step hidden" data-onboarding-step="wsl">
+            <h3>Install WSL</h3>
+            <p id="onboardingWslStatus" class="panel-caption">Checking WSL status...</p>
+            <div class="actions compact-actions">
+              <button id="onboardingInstallWslButton" class="button primary">Install WSL</button>
+              <button id="onboardingRecheckWslButton" class="button">Recheck</button>
+            </div>
+            <div class="actions compact-actions">
+              <button id="onboardingRestartButton" class="button">Restart Windows</button>
+              <button id="onboardingContinueToOpenClawButton" class="button">Continue</button>
+            </div>
+          </section>
+
+          <section class="onboarding-step hidden" data-onboarding-step="openclaw">
+            <h3>Install OpenClaw</h3>
+            <p id="onboardingOpenClawStatus" class="panel-caption">OpenClaw not installed yet.</p>
+            <div class="actions compact-actions">
+              <button id="onboardingInstallOpenClawButton" class="button primary">Install OpenClaw</button>
+              <button id="onboardingRecheckOpenClawButton" class="button">Recheck</button>
+            </div>
+            <div class="actions compact-actions">
+              <button id="onboardingContinueToGatewayButton" class="button">Continue</button>
+            </div>
+          </section>
+
+          <section class="onboarding-step hidden" data-onboarding-step="gateway">
+            <h3>Start Gateway</h3>
+            <p id="onboardingGatewayStatus" class="panel-caption">Gateway is not running yet.</p>
+            <div class="actions compact-actions">
+              <button id="onboardingStartGatewayButton" class="button primary">Start Gateway</button>
+              <button id="onboardingRecheckGatewayButton" class="button">Recheck</button>
+            </div>
+            <div class="actions compact-actions">
+              <button id="onboardingContinueToModelButton" class="button">Continue</button>
+            </div>
+          </section>
+
+          <section class="onboarding-step hidden" data-onboarding-step="model">
+            <h3>Add Model + API Key</h3>
+            <p id="onboardingModelStatus" class="panel-caption">Set provider, model, and API key.</p>
+            <form id="onboardingModelForm" class="form" autocomplete="off">
+              <label>
+                Provider
+                <input id="onboardingModelProvider" type="text" placeholder="openai" />
+              </label>
+              <label>
+                Model
+                <input id="onboardingModelName" type="text" placeholder="gpt-4o-mini" />
+              </label>
+              <label>
+                API Key
+                <input id="onboardingModelApiKey" type="password" placeholder="Paste API key" />
+              </label>
+            </form>
+            <div class="actions compact-actions">
+              <button id="onboardingSaveModelButton" class="button primary">Save Model</button>
+              <button id="onboardingRecheckModelButton" class="button">Recheck</button>
+            </div>
+            <div class="actions compact-actions">
+              <button id="onboardingContinueToDoneButton" class="button">Continue</button>
+            </div>
+          </section>
+
+          <section class="onboarding-step hidden" data-onboarding-step="done">
+            <h3>Setup Complete</h3>
+            <p class="panel-caption">You're ready. Open chat and start using OpenClaw.</p>
+            <div class="actions compact-actions">
+              <button id="onboardingFinishButton" class="button primary">Open Chat</button>
+            </div>
+          </section>
+
+          <div class="onboarding-log-wrap">
+            <div class="panel-header">
+              <h2>Live Setup Log</h2>
+              <span class="panel-caption">Real-time output</span>
+            </div>
+            <pre id="onboardingLogOutput" class="onboarding-log">Waiting for setup actions...</pre>
+          </div>
+        </section>
+      </main>
 
       <main id="setupWorkspace" class="grid">
         <section class="panel">
@@ -87,12 +202,13 @@
         </section>
 
         <section class="panel">
-          <div class="panel-header">
-            <h2>Onboarding</h2>
-            <button id="wizardStartButton" class="button primary">Start</button>
-          </div>
+          <section class="feature-pane" data-feature-pane="onboarding">
+            <div class="panel-header">
+              <h2>Onboarding</h2>
+              <button id="wizardStartButton" class="button primary">Start</button>
+            </div>
 
-          <p id="wizardSessionLabel" class="panel-caption">No session.</p>
+            <p id="wizardSessionLabel" class="panel-caption">No session.</p>
 
           <div id="wizardStepCard" class="wizard-step-card hidden">
             <h3 id="wizardStepTitle" class="wizard-step-title">Step</h3>
@@ -188,14 +304,14 @@
             </div>
           </div>
 
-          <pre id="wizardRawState" class="wizard-raw">State</pre>
+            <pre id="wizardRawState" class="wizard-raw">State</pre>
+          </section>
 
-          <div class="divider"></div>
-
-          <div class="panel-header">
-            <h2>Settings</h2>
-            <button id="saveConfigButton" class="button">Save</button>
-          </div>
+          <section class="feature-pane hidden" data-feature-pane="settings">
+            <div class="panel-header">
+              <h2>Settings</h2>
+              <button id="saveConfigButton" class="button">Save</button>
+            </div>
 
           <form id="configForm" class="form" autocomplete="off">
             <label>
@@ -231,53 +347,53 @@
               Waiting for check.
             </p>
           </form>
+          </section>
 
-          <div class="divider"></div>
+          <section class="feature-pane hidden" data-feature-pane="updates">
+            <div class="panel-header">
+              <h2>Updates</h2>
+              <button id="updateCheckButton" class="button">Check</button>
+            </div>
+            <p id="updateStatusText" class="panel-caption">Idle</p>
+            <div class="actions">
+              <button id="updateInstallButton" class="button hidden">Install + Restart</button>
+            </div>
+          </section>
 
-          <div class="panel-header">
-            <h2>Updates</h2>
-            <button id="updateCheckButton" class="button">Check</button>
-          </div>
-          <p id="updateStatusText" class="panel-caption">Idle</p>
-          <div class="actions">
-            <button id="updateInstallButton" class="button hidden">Install + Restart</button>
-          </div>
+          <section class="feature-pane hidden" data-feature-pane="channels">
+            <div class="panel-header">
+              <h2>Channels</h2>
+              <button id="channelsRefreshButton" class="button">Refresh</button>
+            </div>
+            <div class="management-grid">
+              <article class="status-card management-card">
+                <h3>WhatsApp</h3>
+                <p id="whatsappChannelStatus">Unknown</p>
+                <p id="whatsappChannelDetail" class="panel-caption">Not checked.</p>
+                <div class="actions compact-actions">
+                  <button id="whatsappReconnectButton" class="button">Reconnect</button>
+                  <button id="whatsappDisableButton" class="button">Disable</button>
+                </div>
+              </article>
+              <article class="status-card management-card">
+                <h3>Telegram</h3>
+                <p id="telegramChannelStatus">Unknown</p>
+                <p id="telegramChannelDetail" class="panel-caption">Not checked.</p>
+                <div class="actions compact-actions">
+                  <button id="telegramReconnectButton" class="button">Reconnect</button>
+                  <button id="telegramDisableButton" class="button">Disable</button>
+                </div>
+              </article>
+            </div>
+          </section>
 
-          <div class="divider"></div>
-
-          <div class="panel-header">
-            <h2>Channels</h2>
-            <button id="channelsRefreshButton" class="button">Refresh</button>
-          </div>
-          <div class="management-grid">
-            <article class="status-card management-card">
-              <h3>WhatsApp</h3>
-              <p id="whatsappChannelStatus">Unknown</p>
-              <p id="whatsappChannelDetail" class="panel-caption">Not checked.</p>
-              <div class="actions compact-actions">
-                <button id="whatsappReconnectButton" class="button">Reconnect</button>
-                <button id="whatsappDisableButton" class="button">Disable</button>
-              </div>
-            </article>
-            <article class="status-card management-card">
-              <h3>Telegram</h3>
-              <p id="telegramChannelStatus">Unknown</p>
-              <p id="telegramChannelDetail" class="panel-caption">Not checked.</p>
-              <div class="actions compact-actions">
-                <button id="telegramReconnectButton" class="button">Reconnect</button>
-                <button id="telegramDisableButton" class="button">Disable</button>
-              </div>
-            </article>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="panel-header">
-            <h2>Model</h2>
-            <button id="modelRefreshButton" class="button">Refresh</button>
-          </div>
-          <p id="modelCurrentStatus" class="panel-caption">Not checked.</p>
-          <form id="modelManageForm" class="form" autocomplete="off">
+          <section class="feature-pane hidden" data-feature-pane="model">
+            <div class="panel-header">
+              <h2>Model</h2>
+              <button id="modelRefreshButton" class="button">Refresh</button>
+            </div>
+            <p id="modelCurrentStatus" class="panel-caption">Not checked.</p>
+            <form id="modelManageForm" class="form" autocomplete="off">
             <label>
               Provider
               <input id="manageModelProvider" type="text" placeholder="openai" />
@@ -286,18 +402,18 @@
               Model
               <input id="manageModelName" type="text" placeholder="gpt-4o-mini" />
             </label>
-            <div class="actions compact-actions">
-              <button id="modelApplyButton" type="button" class="button primary">Apply Model</button>
+              <div class="actions compact-actions">
+                <button id="modelApplyButton" type="button" class="button primary">Apply Model</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="feature-pane hidden" data-feature-pane="files">
+            <div class="panel-header">
+              <h2>Files</h2>
+              <button id="workspaceFileLoadButton" class="button">Load</button>
             </div>
-          </form>
-
-          <div class="divider"></div>
-
-          <div class="panel-header">
-            <h2>Files</h2>
-            <button id="workspaceFileLoadButton" class="button">Load</button>
-          </div>
-          <form id="workspaceFileForm" class="form" autocomplete="off">
+            <form id="workspaceFileForm" class="form" autocomplete="off">
             <label>
               OpenClaw File
               <select id="workspaceFileSelect">
@@ -314,19 +430,19 @@
               Content
               <textarea id="workspaceFileEditor" class="workspace-file-editor" placeholder="Load a file to edit."></textarea>
             </label>
-            <div class="actions compact-actions">
-              <button id="workspaceFileSaveButton" type="button" class="button primary">Save File</button>
+              <div class="actions compact-actions">
+                <button id="workspaceFileSaveButton" type="button" class="button primary">Save File</button>
+              </div>
+              <p id="workspaceFileStatus" class="panel-caption">Select a file and click Load.</p>
+            </form>
+          </section>
+
+          <section class="feature-pane hidden" data-feature-pane="telegram">
+            <div class="panel-header">
+              <h2>Telegram Helper</h2>
+              <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
             </div>
-            <p id="workspaceFileStatus" class="panel-caption">Select a file and click Load.</p>
-          </form>
-
-          <div class="divider"></div>
-
-          <div class="panel-header">
-            <h2>Telegram Helper</h2>
-            <button id="telegramHelperStartButton" class="button">Start Reconnect</button>
-          </div>
-          <div class="telegram-helper">
+            <div class="telegram-helper">
             <div class="helper-row">
               <span>1. Open @BotFather</span>
               <button id="copyBotFatherButton" class="button">Copy Link</button>
@@ -344,15 +460,18 @@
               <input id="telegramHelperToken" type="text" placeholder="123456789:AA..." />
             </label>
             <p id="telegramHelperValidation" class="wizard-validation-message hidden"></p>
-            <div class="actions compact-actions">
-              <button id="telegramHelperSaveTokenButton" class="button">Save Token</button>
+              <div class="actions compact-actions">
+                <button id="telegramHelperSaveTokenButton" class="button">Save Token</button>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="notes">
-            <h3>Log</h3>
-            <pre id="logOutput" class="log">App ready.</pre>
-          </div>
+          <section class="feature-pane hidden" data-feature-pane="logs">
+            <div class="notes">
+              <h3>Log</h3>
+              <pre id="logOutput" class="log">App ready.</pre>
+            </div>
+          </section>
         </section>
       </main>
 
