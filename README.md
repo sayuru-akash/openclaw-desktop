@@ -2,6 +2,32 @@
 
 Windows-first Electron desktop wrapper for OpenClaw with guided setup.
 
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Build renderer + main process:
+
+```bash
+npm run build
+```
+
+Run unit tests:
+
+```bash
+npm test
+```
+
+Build Windows installer (NSIS):
+
+```bash
+npm run dist
+```
+
+
 ## UI overview (current)
 
 The app is organized into three workspaces with a left-side navigation:
@@ -58,31 +84,6 @@ This first cut focuses on removing CLI/JSON friction for non-technical users:
 - `src/preload/preload.ts`: secure IPC bridge.
 - `src/renderer/index.html`: onboarding UI shell.
 - `src/renderer/app.js`: client-side setup orchestration + wizard UI logic.
-
-## Development
-
-```bash
-npm install
-npm run dev
-```
-
-Build renderer + main process:
-
-```bash
-npm run build
-```
-
-Run unit tests:
-
-```bash
-npm test
-```
-
-Build Windows installer (NSIS):
-
-```bash
-npm run dist
-```
 
 ## Current behavior notes
 

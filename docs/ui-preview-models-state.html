@@ -9,12 +9,12 @@
   <body>
     <div class="layout">
       <header class="hero">
-        <img id="appBrandLogo" class="brand-logo" src="./openclaw_logo.png" alt="OpenClaw" />
+        <p class="eyebrow">OpenClaw Desktop</p>
         <h1>Control Center</h1>
         <p class="subhead">Chat in the center. Configure from the side.</p>
         <div class="workspace-switcher">
-          <button id="showChatButton" class="button primary">Chat</button>
-          <button id="showSetupButton" class="button">Setup</button>
+          <button id="showChatButton" class="button">Chat</button>
+          <button id="showSetupButton" class="button primary">Setup</button>
           <button id="showControlButton" class="button">Control</button>
         </div>
         <div class="feature-switcher">
@@ -214,7 +214,7 @@
 
       <main id="setupWorkspace" class="main-workspace">
         <section class="panel feature-panel">
-          <section class="feature-pane" data-feature-pane="onboarding">
+          <section class="feature-pane hidden" data-feature-pane="onboarding">
             <div class="panel-header">
               <h2>Onboarding</h2>
               <button id="wizardStartButton" class="button primary">Start</button>
@@ -441,7 +441,7 @@
             </div>
           </section>
 
-          <section class="feature-pane hidden" data-feature-pane="model">
+          <section class="feature-pane" data-feature-pane="model">
             <div class="panel-header">
               <h2>Model</h2>
               <button id="modelRefreshButton" class="button">Refresh</button>
