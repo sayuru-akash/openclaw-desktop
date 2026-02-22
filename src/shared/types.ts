@@ -7,9 +7,8 @@ export interface CommandResult {
 
 export type SetupStage =
   | "idle"
-  | "installing_wsl"
-  | "awaiting_reboot"
-  | "resuming_after_reboot"
+  | "checking_prereqs"
+  | "installing_node"
   | "installing_openclaw"
   | "running_onboarding"
   | "starting_gateway"
@@ -20,7 +19,6 @@ export type SetupStage =
 export interface SetupState {
   stage: SetupStage;
   requiresReboot: boolean;
-  resumeOnLogin: boolean;
   message: string;
   updatedAt: string;
 }
@@ -88,9 +86,8 @@ export interface EnvironmentStatus {
   checkedAt: string;
   platform: NodeJS.Platform;
   isWindows: boolean;
-  wslInstalled: boolean;
-  distroInstalled: boolean;
-  systemdEnabled: boolean;
+  nodeInstalled: boolean;
+  npmInstalled: boolean;
   openClawInstalled: boolean;
   gatewayRunning: boolean;
   notes: string[];
@@ -193,7 +190,8 @@ export interface RendererApi {
   checkForUpdates: () => Promise<UpdateStatusEvent>;
   installDownloadedUpdate: () => Promise<void>;
   onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
-  installWsl: () => Promise<CommandResult>;
+  installNodeRuntime: () => Promise<CommandResult>;
+  installNodeRuntimeStreaming: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
   installOpenClawStreaming: () => Promise<CommandResult>;
   runOnboarding: () => Promise<CommandResult>;
@@ -205,9 +203,6 @@ export interface RendererApi {
   saveConfig: (config: Partial<AppConfig>) => Promise<AppConfig>;
   getSetupState: () => Promise<SetupState>;
   runGuidedSetup: () => Promise<SetupState>;
-  startWslSetup: () => Promise<SetupState>;
-  resumeSetup: () => Promise<SetupState>;
-  restartForSetup: () => Promise<CommandResult>;
   onSetupProgress: (listener: (event: SetupProgressEvent) => void) => () => void;
   wizardStart: (params?: WizardStartParams) => Promise<WizardStartResult>;
   wizardNext: (sessionId: string, answer?: WizardAnswer) => Promise<WizardNextResult>;

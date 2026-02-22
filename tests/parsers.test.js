@@ -2,26 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-  parseWindowsBuildFromRelease,
-  isWindowsBuildSupported,
   isGatewayRunningOutput,
   isScheduledTaskMissing,
   inferChannelStatusFromPayload,
   inferModelStatusFromPayload
 } = require("../dist/main/services/parsers.js");
-
-test("parseWindowsBuildFromRelease extracts build number", () => {
-  assert.equal(parseWindowsBuildFromRelease("10.0.19045"), 19045);
-  assert.equal(parseWindowsBuildFromRelease("10.0.22631"), 22631);
-  assert.equal(parseWindowsBuildFromRelease("invalid"), null);
-});
-
-test("isWindowsBuildSupported enforces minimum build for seamless WSL flow", () => {
-  assert.equal(isWindowsBuildSupported(18363), false);
-  assert.equal(isWindowsBuildSupported(19041), true);
-  assert.equal(isWindowsBuildSupported(22631), true);
-  assert.equal(isWindowsBuildSupported(null), false);
-});
 
 test("isGatewayRunningOutput detects running states", () => {
   assert.equal(isGatewayRunningOutput("Gateway is running"), true);

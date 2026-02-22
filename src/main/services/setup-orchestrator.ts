@@ -1,23 +1,14 @@
 import { EventEmitter } from "node:events";
 import type { SetupProgressEvent, SetupStage, SetupState } from "../../shared/types";
-import { runCommand } from "./command-runner";
 import type { EnvironmentService } from "./environment";
 import type { SetupStore } from "./setup-store";
-import type { WindowsStartupService } from "./windows-startup";
-
-interface SetupOrchestratorOptions {
-  isPackaged: boolean;
-  processExecPath: string;
-}
 
 type SetupProgressListener = (event: SetupProgressEvent) => void;
 
 export class SetupOrchestrator extends EventEmitter {
   constructor(
     private readonly environmentService: EnvironmentService,
-    private readonly setupStore: SetupStore,
-    private readonly startupService: WindowsStartupService,
-    private readonly options: SetupOrchestratorOptions
+    private readonly setupStore: SetupStore
   ) {
     super();
   }
@@ -34,152 +25,73 @@ export class SetupOrchestrator extends EventEmitter {
   }
 
   public async runGuidedSetup(): Promise<SetupState> {
-    this.emitProgress("idle", "Guided setup started.");
-    const status = await this.environmentService.getEnvironmentStatus();
+    this.emitProgress("checking_prereqs", "Guided setup started.");
 
+    const status = await this.environmentService.getEnvironmentStatus();
     if (!status.isWindows) {
       return this.saveState(
         {
           stage: "failed",
           requiresReboot: false,
-          resumeOnLogin: false,
           message: "Guided setup is only available on Windows."
         },
         "error"
       );
     }
 
-    if (!status.wslInstalled) {
-      return this.startWslSetup();
-    }
-
-    return this.continueOpenClawSetup();
-  }
-
-  public async startWslSetup(): Promise<SetupState> {
-    if (process.platform !== "win32") {
-      return this.saveState(
-        {
-          stage: "failed",
-          requiresReboot: false,
-          resumeOnLogin: false,
-          message: "WSL setup is only available on Windows."
-        },
-        "error"
-      );
-    }
-
     await this.saveState({
-      stage: "installing_wsl",
+      stage: "checking_prereqs",
       requiresReboot: false,
-      message: "Requesting admin approval to install WSL."
+      message: "Checking native Windows prerequisites."
     });
 
-    let resumeOnLogin = false;
+    if (!status.nodeInstalled || !status.npmInstalled) {
+      await this.saveState({
+        stage: "installing_node",
+        requiresReboot: false,
+        message: "Installing Node.js LTS runtime..."
+      });
 
-    if (this.options.isPackaged) {
-      const registerResult = await this.startupService.registerResumeOnLogin(this.buildResumeCommandLine());
-      resumeOnLogin = registerResult.ok;
-      if (resumeOnLogin) {
-        this.emitProgress("installing_wsl", "Resume on login registered.");
-      } else {
-        this.emitProgress(
-          "installing_wsl",
-          "Could not register resume-on-login. Manual reopen after reboot may be required.",
-          "warning"
+      const nodeInstall = await this.environmentService.installNodeRuntimeStreaming((line, stream) => {
+        this.emitProgress("installing_node", line, stream === "stderr" ? "warning" : "info", stream);
+      });
+
+      if (!nodeInstall.ok) {
+        return this.saveState(
+          {
+            stage: "failed",
+            requiresReboot: false,
+            message: "Node.js installation failed. Retry setup or install Node.js LTS manually, then continue."
+          },
+          "error"
         );
       }
-    }
 
-    const installResult = await this.environmentService.installWslElevated();
-    const rebootRequired = this.environmentService.rebootRequired(installResult);
-    const environmentStatus = await this.environmentService.getEnvironmentStatus();
-
-    if (!installResult.ok) {
-      if (resumeOnLogin) {
-        await this.startupService.clearResumeOnLogin();
+      const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
+      const postNodeStatus = await this.environmentService.getEnvironmentStatus();
+      if (!postNodeStatus.nodeInstalled || !postNodeStatus.npmInstalled) {
+        return this.saveState(
+          {
+            stage: "failed",
+            requiresReboot: rebootRequired,
+            message: rebootRequired
+              ? "Node.js install requested a restart. Restart Windows, then run guided setup again."
+              : "Node.js install completed but runtime is not detected. Restart Windows and retry guided setup."
+          },
+          "error"
+        );
       }
 
-      const virtualizationHint = environmentStatus.notes.some((note) => note.toLowerCase().includes("virtualization"))
-        ? "BIOS/UEFI virtualization appears disabled. Enable Intel VT-x/AMD SVM, restart Windows, then retry."
-        : "WSL install failed or was cancelled. Retry to continue.";
-
-      return this.saveState(
-        {
-          stage: "failed",
-          requiresReboot: false,
-          resumeOnLogin: false,
-          message: virtualizationHint
-        },
-        "error"
-      );
-    }
-
-    this.emitProgress("installing_wsl", "WSL install command completed.");
-
-    if (rebootRequired || !environmentStatus.wslInstalled) {
-      return this.saveState({
-        stage: "awaiting_reboot",
-        requiresReboot: true,
-        resumeOnLogin,
-        message: resumeOnLogin
-          ? "Restart Windows. OpenClaw Desktop will resume setup after sign-in."
-          : "Restart Windows and reopen OpenClaw Desktop to continue setup."
-      });
-    }
-
-    if (resumeOnLogin) {
-      await this.startupService.clearResumeOnLogin();
+      this.emitProgress("installing_node", "Node.js runtime is ready.");
     }
 
     return this.continueOpenClawSetup();
-  }
-
-  public async resumeAfterReboot(): Promise<SetupState> {
-    const current = await this.setupStore.load();
-    const shouldCheck = current.stage === "awaiting_reboot" || current.resumeOnLogin;
-
-    if (!shouldCheck) {
-      return current;
-    }
-
-    await this.saveState({
-      stage: "resuming_after_reboot",
-      message: "Checking WSL status after reboot."
-    });
-
-    const environmentStatus = await this.environmentService.getEnvironmentStatus();
-    if (!environmentStatus.wslInstalled) {
-      return this.saveState({
-        stage: "awaiting_reboot",
-        requiresReboot: true,
-        message: "WSL still looks unavailable. Restart again or run install one more time."
-      });
-    }
-
-    if (current.resumeOnLogin) {
-      await this.startupService.clearResumeOnLogin();
-      this.emitProgress("resuming_after_reboot", "Resume-on-login entry cleared.");
-    }
-
-    return this.continueOpenClawSetup();
-  }
-
-  public restartForSetup() {
-    return runCommand("shutdown.exe", [
-      "/r",
-      "/t",
-      "5",
-      "/c",
-      "OpenClaw Desktop is resuming setup after restart."
-    ]);
   }
 
   public async completeOnboardingFromUi(): Promise<SetupState> {
     await this.saveState({
       stage: "starting_gateway",
       requiresReboot: false,
-      resumeOnLogin: false,
       message: "Finalizing onboarding and verifying gateway."
     });
 
@@ -192,7 +104,6 @@ export class SetupOrchestrator extends EventEmitter {
         {
           stage: "failed",
           requiresReboot: false,
-          resumeOnLogin: false,
           message: "Gateway start failed after onboarding. Retry Start Gateway and finish again."
         },
         "error"
@@ -205,7 +116,6 @@ export class SetupOrchestrator extends EventEmitter {
         {
           stage: "ready_for_manual_step",
           requiresReboot: false,
-          resumeOnLogin: false,
           message: "Onboarding completed but gateway is not reporting healthy yet. Check Gateway Status and retry."
         },
         "warning"
@@ -215,7 +125,6 @@ export class SetupOrchestrator extends EventEmitter {
     return this.saveState({
       stage: "completed",
       requiresReboot: false,
-      resumeOnLogin: false,
       message: "Setup complete. OpenClaw gateway is running."
     });
   }
@@ -223,24 +132,14 @@ export class SetupOrchestrator extends EventEmitter {
   private async continueOpenClawSetup(): Promise<SetupState> {
     const status = await this.environmentService.getEnvironmentStatus();
 
-    if (!status.wslInstalled) {
-      return this.saveState({
-        stage: "awaiting_reboot",
-        requiresReboot: true,
-        resumeOnLogin: false,
-        message: "WSL is still not available. Restart and retry setup."
-      });
-    }
-
-    if (!status.distroInstalled) {
+    if (!status.nodeInstalled || !status.npmInstalled) {
       return this.saveState(
         {
-          stage: "ready_for_manual_step",
+          stage: "failed",
           requiresReboot: false,
-          resumeOnLogin: false,
-          message: "WSL is installed, but no distro is initialized yet. Open Ubuntu once, complete first-run prompts, then continue setup."
+          message: "Node.js runtime is missing. Install Node and rerun setup."
         },
-        "warning"
+        "error"
       );
     }
 
@@ -248,8 +147,7 @@ export class SetupOrchestrator extends EventEmitter {
       await this.saveState({
         stage: "installing_openclaw",
         requiresReboot: false,
-        resumeOnLogin: false,
-        message: "Installing OpenClaw in WSL..."
+        message: "Installing OpenClaw on Windows..."
       });
 
       const installResult = await this.environmentService.installOpenClawStreaming((line, stream) => {
@@ -266,7 +164,6 @@ export class SetupOrchestrator extends EventEmitter {
           {
             stage: "failed",
             requiresReboot: false,
-            resumeOnLogin: false,
             message: "OpenClaw installation failed. Check logs and retry guided setup."
           },
           "error"
@@ -279,7 +176,6 @@ export class SetupOrchestrator extends EventEmitter {
     await this.saveState({
       stage: "starting_gateway",
       requiresReboot: false,
-      resumeOnLogin: false,
       message: "Starting OpenClaw gateway for UI onboarding..."
     });
 
@@ -292,7 +188,6 @@ export class SetupOrchestrator extends EventEmitter {
         {
           stage: "failed",
           requiresReboot: false,
-          resumeOnLogin: false,
           message: "Gateway start failed. Fix gateway health first, then retry guided setup."
         },
         "error"
@@ -305,7 +200,6 @@ export class SetupOrchestrator extends EventEmitter {
         {
           stage: "ready_for_manual_step",
           requiresReboot: false,
-          resumeOnLogin: false,
           message: "Gateway did not report running yet. Use Gateway Status/Start, then open in-app onboarding wizard."
         },
         "warning"
@@ -315,7 +209,6 @@ export class SetupOrchestrator extends EventEmitter {
     return this.saveState({
       stage: "ready_for_manual_step",
       requiresReboot: false,
-      resumeOnLogin: false,
       message: "Gateway is running. Complete onboarding in the in-app wizard."
     });
   }
@@ -346,9 +239,5 @@ export class SetupOrchestrator extends EventEmitter {
     };
 
     this.emit("progress", event);
-  }
-
-  private buildResumeCommandLine(): string {
-    return `"${this.options.processExecPath}" --resume-setup`;
   }
 }

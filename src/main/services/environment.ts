@@ -13,27 +13,29 @@ import type {
   WizardStartResult,
   WizardStatusResult
 } from "../../shared/types";
+import { access, mkdir } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import { runCommand, runCommandStreaming } from "./command-runner";
 import {
   inferChannelStatusFromPayload,
   inferModelStatusFromPayload,
-  isScheduledTaskMissing,
-  isWindowsBuildSupported,
-  parseWindowsBuildFromRelease
+  isScheduledTaskMissing
 } from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
+const NODE_INSTALL_OK_EXIT_CODES = [3010];
 
 export class EnvironmentService {
+  private resolvedOpenClawCommand = "";
+
   public async getEnvironmentStatus(): Promise<EnvironmentStatus> {
     const status: EnvironmentStatus = {
       checkedAt: new Date().toISOString(),
       platform: process.platform,
       isWindows: process.platform === "win32",
-      wslInstalled: false,
-      distroInstalled: false,
-      systemdEnabled: false,
+      nodeInstalled: false,
+      npmInstalled: false,
       openClawInstalled: false,
       gatewayRunning: false,
       notes: []
@@ -44,45 +46,24 @@ export class EnvironmentService {
       return status;
     }
 
-    const virtualizationWarning = await this.getVirtualizationWarning();
-    if (virtualizationWarning) {
-      status.notes.push(virtualizationWarning);
-    }
+    const runtime = await this.getNodeRuntimeStatus();
+    status.nodeInstalled = runtime.nodeInstalled;
+    status.npmInstalled = runtime.npmInstalled;
 
-    const windowsBuild = parseWindowsBuildFromRelease(os.release());
-    if (!isWindowsBuildSupported(windowsBuild)) {
-      status.notes.push("Windows build may be too old for seamless WSL setup. Prefer Windows 10 build 19041+ or Windows 11.");
-    }
-
-    const wslStatus = await runCommand("wsl.exe", ["--status"]);
-    status.wslInstalled = wslStatus.ok;
-    if (!wslStatus.ok) {
-      status.notes.push("WSL is not available yet.");
+    if (!status.nodeInstalled || !status.npmInstalled) {
+      status.notes.push("Node.js LTS runtime is not ready.");
+      if (!status.nodeInstalled) {
+        status.notes.push("node command is missing.");
+      }
+      if (!status.npmInstalled) {
+        status.notes.push("npm command is missing.");
+      }
       return status;
     }
 
-    const distroStatus = await runCommand("wsl.exe", ["-l", "-q"]);
-    const distros = distroStatus.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    status.distroInstalled = distros.length > 0;
-    if (!status.distroInstalled) {
-      status.notes.push("WSL is installed but no Linux distro is initialized.");
-      return status;
-    }
-
-    const systemdStatus = await this.runInWsl("grep -E '^systemd=true' /etc/wsl.conf");
-    status.systemdEnabled = systemdStatus.ok;
-    if (!status.systemdEnabled) {
-      status.notes.push("systemd does not look enabled in /etc/wsl.conf.");
-    }
-
-    const openClawStatus = await this.runInWsl("command -v openclaw >/dev/null 2>&1");
-    status.openClawInstalled = openClawStatus.ok;
+    status.openClawInstalled = await this.isOpenClawAvailable();
     if (!status.openClawInstalled) {
-      status.notes.push("OpenClaw CLI not found in WSL.");
+      status.notes.push("OpenClaw CLI not found on native Windows path.");
       return status;
     }
 
@@ -96,37 +77,28 @@ export class EnvironmentService {
     return status;
   }
 
-  public installWsl(): Promise<CommandResult> {
-    return runCommand("wsl.exe", ["--install"], { okExitCodes: [3010] });
+  public installNodeRuntime(): Promise<CommandResult> {
+    return this.installNodeRuntimeInternal();
   }
 
-  public installWslElevated(): Promise<CommandResult> {
-    const installScript = [
-      "$process = Start-Process -FilePath 'wsl.exe' -ArgumentList '--install' -Verb RunAs -PassThru -Wait;",
-      "exit $process.ExitCode"
-    ].join(" ");
-
-    return runCommand(
-      "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", installScript],
-      { okExitCodes: [3010] }
-    );
+  public installNodeRuntimeStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+    return this.installNodeRuntimeInternal(onLog);
   }
 
   public installOpenClaw(): Promise<CommandResult> {
-    return this.runInWsl("curl -fsSL https://openclaw.ai/install.sh | bash");
+    return this.installOpenClawInternal();
   }
 
   public installOpenClawStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
-    return this.runInWslStreaming("curl -fsSL https://openclaw.ai/install.sh | bash", onLog);
+    return this.installOpenClawInternal(onLog);
   }
 
   public runOnboarding(): Promise<CommandResult> {
-    return this.runInWsl("openclaw onboard --install-daemon");
+    return this.runOpenClaw(["onboard", "--install-daemon"]);
   }
 
   public runOnboardingStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
-    return this.runInWslStreaming("openclaw onboard --install-daemon", onLog);
+    return this.runOpenClawStreaming(["onboard", "--install-daemon"], onLog);
   }
 
   public wizardStart(params: WizardStartParams = {}): Promise<WizardStartResult> {
@@ -147,19 +119,19 @@ export class EnvironmentService {
   }
 
   public gatewayStatus(): Promise<CommandResult> {
-    return this.runInWsl("openclaw gateway status");
+    return this.runOpenClaw(["gateway", "status"]);
   }
 
   public gatewayStart(): Promise<CommandResult> {
-    return this.runInWsl("openclaw gateway start");
+    return this.runOpenClaw(["gateway", "start"]);
   }
 
   public gatewayStartStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
-    return this.runInWslStreaming("openclaw gateway start", onLog);
+    return this.runOpenClawStreaming(["gateway", "start"], onLog);
   }
 
   public gatewayStop(): Promise<CommandResult> {
-    return this.runInWsl("openclaw gateway stop");
+    return this.runOpenClaw(["gateway", "stop"]);
   }
 
   public async getChannelStatuses(): Promise<ChannelStatusResult> {
@@ -172,11 +144,11 @@ export class EnvironmentService {
   }
 
   public async reconnectChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
-    const command = channel === "whatsapp"
-      ? "openclaw channels login --channel whatsapp"
-      : "openclaw channels login --channel telegram";
+    const args = channel === "whatsapp"
+      ? ["channels", "login", "--channel", "whatsapp"]
+      : ["channels", "login", "--channel", "telegram"];
 
-    const result = await this.runInWsl(command);
+    const result = await this.runOpenClaw(args);
     if (!result.ok) {
       throw new Error(result.stderr || result.stdout || `Failed to reconnect ${channel}.`);
     }
@@ -185,15 +157,15 @@ export class EnvironmentService {
   }
 
   public async disableChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
-    const commands = [
-      `openclaw channels logout --channel ${channel}`,
-      `openclaw channels remove --channel ${channel} --delete`,
-      `openclaw channels remove --channel ${channel}`
+    const commandArgs = [
+      ["channels", "logout", "--channel", channel],
+      ["channels", "remove", "--channel", channel, "--delete"],
+      ["channels", "remove", "--channel", channel]
     ];
 
     let lastError = "";
-    for (const command of commands) {
-      const result = await this.runInWsl(command);
+    for (const args of commandArgs) {
+      const result = await this.runOpenClaw(args);
       if (result.ok) {
         return this.readChannelStatus(channel);
       }
@@ -209,15 +181,14 @@ export class EnvironmentService {
       throw new Error("Telegram bot token is required.");
     }
 
-    const tokenArg = this.escapeShellSingleQuoted(normalizedToken);
-    const commands = [
-      `openclaw channels add --channel telegram --token ${tokenArg}`,
-      `openclaw channels login --channel telegram --token ${tokenArg}`
+    const commandArgs = [
+      ["channels", "add", "--channel", "telegram", "--token", normalizedToken],
+      ["channels", "login", "--channel", "telegram", "--token", normalizedToken]
     ];
 
     let lastError = "";
-    for (const command of commands) {
-      const result = await this.runInWsl(command);
+    for (const args of commandArgs) {
+      const result = await this.runOpenClaw(args);
       if (result.ok) {
         return this.readChannelStatus("telegram");
       }
@@ -228,7 +199,7 @@ export class EnvironmentService {
   }
 
   public async getModelStatus(): Promise<ModelStatusResult> {
-    const result = await this.runInWsl("openclaw models list --json");
+    const result = await this.runOpenClaw(["models", "list", "--json"]);
     if (!result.ok) {
       throw new Error(result.stderr || result.stdout || "Unable to load model status.");
     }
@@ -253,11 +224,15 @@ export class EnvironmentService {
       throw new Error("Provider and model are required.");
     }
 
-    const providerArg = this.escapeShellSingleQuoted(normalizedProvider);
-    const modelArg = this.escapeShellSingleQuoted(normalizedModel);
-    const result = await this.runInWsl(
-      `openclaw models set --provider ${providerArg} --model ${modelArg} --json`
-    );
+    const result = await this.runOpenClaw([
+      "models",
+      "set",
+      "--provider",
+      normalizedProvider,
+      "--model",
+      normalizedModel,
+      "--json"
+    ]);
 
     if (!result.ok) {
       throw new Error(result.stderr || result.stdout || "Unable to apply model selection.");
@@ -291,16 +266,7 @@ export class EnvironmentService {
       };
     }
 
-    if (query.code !== 0) {
-      return {
-        supported: true,
-        enabled: false,
-        taskName: ALWAYS_ON_TASK_NAME,
-        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
-      };
-    }
-
-    if (!query.ok) {
+    if (query.code !== 0 || !query.ok) {
       return {
         supported: true,
         enabled: false,
@@ -356,11 +322,7 @@ export class EnvironmentService {
       return this.getAlwaysOnGatewayStatus();
     }
 
-    if (deleteResult.code !== 0) {
-      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
-    }
-
-    if (!deleteResult.ok) {
+    if (deleteResult.code !== 0 || !deleteResult.ok) {
       throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
     }
 
@@ -376,34 +338,201 @@ export class EnvironmentService {
     return /reboot|restart/.test(output);
   }
 
-  private runInWsl(command: string): Promise<CommandResult> {
-    return runCommand("wsl.exe", ["bash", "-lc", command]);
+  private async installNodeRuntimeInternal(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    if (process.platform !== "win32") {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Native Node runtime setup is only available on Windows."
+      };
+    }
+
+    const runtime = await this.getNodeRuntimeStatus();
+    if (runtime.nodeInstalled && runtime.npmInstalled) {
+      return {
+        ok: true,
+        code: 0,
+        stdout: "Node.js runtime already installed.",
+        stderr: ""
+      };
+    }
+
+    onLog?.("Installing Node.js LTS runtime on Windows...", "stdout");
+
+    const wingetResult = await this.installNodeWithWinget(onLog);
+    if (wingetResult.ok) {
+      return this.verifyNodeRuntimeInstalled(wingetResult, onLog);
+    }
+
+    onLog?.("winget install failed or unavailable. Falling back to MSI installer...", "stderr");
+
+    const msiResult = await this.installNodeWithMsiFallback(onLog);
+    return this.verifyNodeRuntimeInstalled(msiResult, onLog);
   }
 
-  private async getVirtualizationWarning(): Promise<string> {
-    const result = await runCommand("powershell.exe", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      "(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty VirtualizationFirmwareEnabled | Select-Object -First 1)"
-    ]);
+  private async installOpenClawInternal(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    if (process.platform !== "win32") {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "OpenClaw native install is only available on Windows."
+      };
+    }
+
+    const runtime = await this.getNodeRuntimeStatus();
+    if (!runtime.nodeInstalled || !runtime.npmInstalled) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Node.js runtime is missing. Install Node first."
+      };
+    }
+
+    const prefix = this.getManagedNpmPrefix();
+    await mkdir(prefix, { recursive: true });
+
+    const npmFile = this.resolveNpmCommand();
+    const npmArgs = ["install", "-g", "openclaw", "--prefix", prefix, "--no-fund", "--no-audit"];
+    onLog?.(`Installing OpenClaw to ${prefix}...`, "stdout");
+
+    const result = onLog
+      ? await runCommandStreaming(npmFile, npmArgs, {
+        env: this.buildCommandEnv(),
+        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+      })
+      : await runCommand(npmFile, npmArgs, { env: this.buildCommandEnv() });
 
     if (!result.ok) {
-      return "";
+      return result;
     }
 
-    const value = `${result.stdout}\n${result.stderr}`.trim().toLowerCase();
-    if (value.includes("false")) {
-      return "BIOS/UEFI virtualization looks disabled. Enable Intel VT-x or AMD SVM in BIOS/UEFI, then restart Windows.";
+    const openclawInstalled = await this.isOpenClawAvailable(true);
+    if (!openclawInstalled) {
+      return {
+        ok: false,
+        code: result.code,
+        stdout: result.stdout,
+        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected.`.trim()
+      };
     }
 
-    return "";
+    return result;
+  }
+
+  private async installNodeWithWinget(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "$winget = Get-Command winget.exe -ErrorAction SilentlyContinue",
+      "if (-not $winget) { Write-Output 'winget.exe not found'; exit 127 }",
+      "Write-Output 'Attempting Node.js LTS install via winget (UAC prompt may appear)...'",
+      "$process = Start-Process -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--silent','--accept-package-agreements','--accept-source-agreements') -Verb RunAs -PassThru -Wait",
+      "Write-Output ('winget exit code: ' + $process.ExitCode)",
+      "exit $process.ExitCode"
+    ].join("; ");
+
+    if (!onLog) {
+      return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        env: this.buildCommandEnv()
+      });
+    }
+
+    return runCommandStreaming(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      {
+        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        env: this.buildCommandEnv(),
+        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+      }
+    );
+  }
+
+  private async installNodeWithMsiFallback(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "$ProgressPreference = 'SilentlyContinue'",
+      "Write-Output 'Resolving latest Node.js LTS MSI...'",
+      "$index = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json'",
+      "$lts = $index | Where-Object { $_.lts -ne $false -and $_.files -contains 'win-x64-msi' } | Select-Object -First 1",
+      "if (-not $lts) { throw 'Could not resolve Node.js LTS release.' }",
+      "$version = $lts.version",
+      "$msiName = 'node-' + $version + '-x64.msi'",
+      "$msiUrl = 'https://nodejs.org/dist/' + $version + '/' + $msiName",
+      "$target = Join-Path $env:TEMP $msiName",
+      "Write-Output ('Downloading ' + $msiUrl)",
+      "Invoke-WebRequest -Uri $msiUrl -OutFile $target",
+      "Write-Output 'Running MSI installer (UAC prompt may appear)...'",
+      "$process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $target, '/qn', '/norestart') -Verb RunAs -PassThru -Wait",
+      "Write-Output ('MSI exit code: ' + $process.ExitCode)",
+      "exit $process.ExitCode"
+    ].join("; ");
+
+    if (!onLog) {
+      return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        env: this.buildCommandEnv()
+      });
+    }
+
+    return runCommandStreaming(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      {
+        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        env: this.buildCommandEnv(),
+        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+      }
+    );
+  }
+
+  private async verifyNodeRuntimeInstalled(
+    installResult: CommandResult,
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    if (!installResult.ok) {
+      return installResult;
+    }
+
+    const runtime = await this.getNodeRuntimeStatus();
+    if (runtime.nodeInstalled && runtime.npmInstalled) {
+      onLog?.("Node.js runtime is ready.", "stdout");
+      return installResult;
+    }
+
+    return {
+      ok: false,
+      code: installResult.code,
+      stdout: installResult.stdout,
+      stderr: `${installResult.stderr}\nNode.js install completed but node/npm are still unavailable. Restart Windows and retry.`.trim()
+    };
+  }
+
+  private async getNodeRuntimeStatus(): Promise<{ nodeInstalled: boolean; npmInstalled: boolean }> {
+    const nodeCheck = await runCommand(this.resolveNodeCommand(), ["--version"], { env: this.buildCommandEnv() });
+    const npmCheck = await runCommand(this.resolveNpmCommand(), ["--version"], { env: this.buildCommandEnv() });
+    return {
+      nodeInstalled: nodeCheck.ok,
+      npmInstalled: npmCheck.ok
+    };
   }
 
   private async readChannelStatus(channel: ManagedChannel): Promise<ChannelStatusItem> {
-    const jsonCommand = `openclaw channels status --channel ${channel} --json`;
-    const jsonResult = await this.runInWsl(jsonCommand);
+    const jsonResult = await this.runOpenClaw(["channels", "status", "--channel", channel, "--json"]);
 
     if (jsonResult.ok) {
       try {
@@ -414,24 +543,22 @@ export class EnvironmentService {
       }
     }
 
-    const fallback = await this.runInWsl(`openclaw channels status --channel ${channel}`);
-    return inferChannelStatusFromPayload(
-      channel,
-      fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`,
-      fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`
-    );
+    const fallback = await this.runOpenClaw(["channels", "status", "--channel", channel]);
+    const fallbackText = fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`;
+    return inferChannelStatusFromPayload(channel, fallbackText, fallbackText);
   }
 
   private getAlwaysOnTaskAction(): string {
-    const gatewayCommand = "openclaw gateway start >/dev/null 2>&1 || true";
-    return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "wsl.exe bash -lc '${gatewayCommand}'"`;
+    const openclawPath = this.getManagedOpenClawPath();
+    const command = this.quoteForSingleQuotedPowerShell(openclawPath);
+    const script = `if (Test-Path ${command}) { & ${command} gateway start *> $null } else { openclaw gateway start *> $null }`;
+    const escapedScript = script.replace(/"/g, '\\"');
+    return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "${escapedScript}"`;
   }
 
   private async runWizardCall<T>(method: string, params: unknown): Promise<T> {
     const payload = JSON.stringify(params);
-    const escapedPayload = this.escapeShellSingleQuoted(payload);
-    const command = `openclaw gateway call ${method} --params ${escapedPayload} --json`;
-    const result = await this.runInWsl(command);
+    const result = await this.runOpenClaw(["gateway", "call", method, "--params", payload, "--json"]);
 
     if (!result.ok) {
       throw new Error(result.stderr || result.stdout || `${method} failed`);
@@ -452,14 +579,112 @@ export class EnvironmentService {
     return parsed as T;
   }
 
-  private runInWslStreaming(
-    command: string,
+  private async runOpenClaw(args: string[]): Promise<CommandResult> {
+    const command = await this.resolveOpenClawCommand();
+    return runCommand(command, args, { env: this.buildCommandEnv() });
+  }
+
+  private async runOpenClawStreaming(
+    args: string[],
     onLog: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
-    return runCommandStreaming("wsl.exe", ["bash", "-lc", command], {
+    const command = await this.resolveOpenClawCommand();
+    return runCommandStreaming(command, args, {
+      env: this.buildCommandEnv(),
       onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
       onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
     });
+  }
+
+  private async isOpenClawAvailable(clearCache = false): Promise<boolean> {
+    if (clearCache) {
+      this.resolvedOpenClawCommand = "";
+    }
+
+    try {
+      await this.resolveOpenClawCommand();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async resolveOpenClawCommand(): Promise<string> {
+    if (this.resolvedOpenClawCommand) {
+      return this.resolvedOpenClawCommand;
+    }
+
+    const candidates = this.getOpenClawCommandCandidates();
+
+    for (const candidate of candidates) {
+      if (path.isAbsolute(candidate) && !(await this.fileExists(candidate))) {
+        continue;
+      }
+
+      const result = await runCommand(candidate, ["--version"], { env: this.buildCommandEnv() });
+      if (result.ok) {
+        this.resolvedOpenClawCommand = candidate;
+        return candidate;
+      }
+    }
+
+    throw new Error("OpenClaw CLI not found. Install OpenClaw first.");
+  }
+
+  private getOpenClawCommandCandidates(): string[] {
+    const managed = this.getManagedOpenClawPath();
+    if (process.platform === "win32") {
+      return [managed, "openclaw.cmd", "openclaw"];
+    }
+
+    return [managed, "openclaw"];
+  }
+
+  private buildCommandEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const prefix = this.getManagedNpmPrefix();
+    const pathKey = process.platform === "win32" ? "Path" : "PATH";
+    const currentPath = env[pathKey] || env.PATH || "";
+    env[pathKey] = [prefix, currentPath].filter(Boolean).join(path.delimiter);
+    env.PATH = env[pathKey];
+    return env;
+  }
+
+  private getManagedNpmPrefix(): string {
+    if (process.platform !== "win32") {
+      return path.join(os.homedir(), ".openclaw-desktop", "npm");
+    }
+
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    return path.join(localAppData, "OpenClawDesktop", "npm");
+  }
+
+  private getManagedOpenClawPath(): string {
+    if (process.platform === "win32") {
+      return path.join(this.getManagedNpmPrefix(), "openclaw.cmd");
+    }
+    return path.join(this.getManagedNpmPrefix(), "openclaw");
+  }
+
+  private resolveNodeCommand(): string {
+    return process.platform === "win32" ? "node.exe" : "node";
+  }
+
+  private resolveNpmCommand(): string {
+    return process.platform === "win32" ? "npm.cmd" : "npm";
+  }
+
+  private quoteForSingleQuotedPowerShell(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private emitChunkLines(
@@ -472,10 +697,6 @@ export class EnvironmentService {
     for (const line of lines) {
       onLog(line, stream);
     }
-  }
-
-  private escapeShellSingleQuoted(value: string): string {
-    return `'${value.replace(/'/g, `'\"'\"'`)}'`;
   }
 
   private parseJsonOutput(stdout: string, stderr: string): unknown {

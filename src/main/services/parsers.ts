@@ -8,25 +8,6 @@ export interface InferredModelStatus {
   detail: string;
 }
 
-export function parseWindowsBuildFromRelease(release: string): number | null {
-  const match = String(release).match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    return null;
-  }
-
-  const build = Number.parseInt(match[3], 10);
-  return Number.isFinite(build) ? build : null;
-}
-
-export function isWindowsBuildSupported(build: number | null): boolean {
-  if (build === null) {
-    return false;
-  }
-
-  // Win10 2004 (19041) and later have the modern WSL install flow we rely on.
-  return build >= 19041;
-}
-
 export function isGatewayRunningOutput(output: string): boolean {
   return /running|active|ok/i.test(output);
 }

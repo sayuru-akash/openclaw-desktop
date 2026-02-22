@@ -27,7 +27,8 @@ const api: RendererApi = {
   getUpdateStatus: () => ipcRenderer.invoke("update:get-status"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installDownloadedUpdate: () => ipcRenderer.invoke("update:install"),
-  installWsl: () => ipcRenderer.invoke("env:install-wsl"),
+  installNodeRuntime: () => ipcRenderer.invoke("env:install-node"),
+  installNodeRuntimeStreaming: () => ipcRenderer.invoke("env:install-node-stream"),
   installOpenClaw: () => ipcRenderer.invoke("env:install-openclaw"),
   installOpenClawStreaming: () => ipcRenderer.invoke("env:install-openclaw-stream"),
   runOnboarding: () => ipcRenderer.invoke("env:run-onboarding"),
@@ -39,9 +40,6 @@ const api: RendererApi = {
   saveConfig: (config: Partial<AppConfig>) => ipcRenderer.invoke("config:save", config),
   getSetupState: () => ipcRenderer.invoke("setup:get-state"),
   runGuidedSetup: () => ipcRenderer.invoke("setup:run-guided"),
-  startWslSetup: () => ipcRenderer.invoke("setup:start-wsl"),
-  resumeSetup: () => ipcRenderer.invoke("setup:resume"),
-  restartForSetup: () => ipcRenderer.invoke("setup:restart"),
   onSetupProgress: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: SetupProgressEvent) => {
       listener(payload);

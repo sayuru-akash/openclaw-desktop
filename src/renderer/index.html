@@ -42,16 +42,16 @@
               <p id="platformValue">Pending</p>
             </article>
             <article class="status-card">
-              <h3>WSL</h3>
-              <p id="wslValue">Pending</p>
+              <h3>Node.js</h3>
+              <p id="nodeValue">Pending</p>
             </article>
             <article class="status-card">
-              <h3>Distro</h3>
-              <p id="distroValue">Pending</p>
+              <h3>npm</h3>
+              <p id="npmValue">Pending</p>
             </article>
             <article class="status-card">
-              <h3>systemd</h3>
-              <p id="systemdValue">Pending</p>
+              <h3>Runtime</h3>
+              <p id="runtimeValue">Pending</p>
             </article>
             <article class="status-card">
               <h3>OpenClaw</h3>
@@ -75,7 +75,7 @@
           <p class="panel-caption command-caption">Quick Actions</p>
           <div class="actions compact-actions">
             <button id="guidedSetupButton" class="button primary">Quick Setup</button>
-            <button id="installWslButton" class="button">Install WSL</button>
+            <button id="installNodeButton" class="button">Install Node</button>
             <button id="installOpenClawButton" class="button">Install OpenClaw</button>
             <button id="runOnboardingButton" class="button">CLI Onboard</button>
           </div>
@@ -83,10 +83,6 @@
             <button id="gatewayStartButton" class="button">Start Gateway</button>
             <button id="gatewayStopButton" class="button">Stop Gateway</button>
             <button id="gatewayStatusButton" class="button">Gateway Status</button>
-            <button id="resumeSetupButton" class="button">Resume Setup</button>
-          </div>
-          <div class="actions compact-actions">
-            <button id="restartNowButton" class="button">Restart Windows</button>
           </div>
 
           <div class="divider"></div>
@@ -116,26 +112,23 @@
 
           <section class="onboarding-step" data-onboarding-step="welcome">
             <h3>Welcome</h3>
-            <p>This flow installs WSL, installs OpenClaw, starts the gateway, and sets your first model.</p>
+            <p>This flow installs Node.js, installs OpenClaw, starts the gateway, and sets your first model.</p>
             <ul class="onboarding-list">
-              <li>Admin prompt may appear during WSL install.</li>
-              <li>A reboot may be required once.</li>
-              <li>Setup resumes after restart.</li>
+              <li>Admin prompt may appear during Node install.</li>
+              <li>OpenClaw installs in an app-managed local folder.</li>
+              <li>You can change model and channels later in side menu.</li>
             </ul>
             <div class="actions compact-actions">
               <button id="onboardingBeginButton" class="button primary">Start Setup</button>
             </div>
           </section>
 
-          <section class="onboarding-step hidden" data-onboarding-step="wsl">
-            <h3>Install WSL</h3>
-            <p id="onboardingWslStatus" class="panel-caption">Checking WSL status...</p>
+          <section class="onboarding-step hidden" data-onboarding-step="node">
+            <h3>Install Node.js Runtime</h3>
+            <p id="onboardingNodeStatus" class="panel-caption">Checking Node.js status...</p>
             <div class="actions compact-actions">
-              <button id="onboardingInstallWslButton" class="button primary">Install WSL</button>
-              <button id="onboardingRecheckWslButton" class="button">Recheck</button>
-            </div>
-            <div class="actions compact-actions">
-              <button id="onboardingRestartButton" class="button">Restart Windows</button>
+              <button id="onboardingInstallNodeButton" class="button primary">Install Node.js</button>
+              <button id="onboardingRecheckNodeButton" class="button">Recheck</button>
               <button id="onboardingContinueToOpenClawButton" class="button">Continue</button>
             </div>
           </section>

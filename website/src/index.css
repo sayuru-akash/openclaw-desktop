@@ -71,18 +71,10 @@ body {
   font-size: 14px;
 }
 
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 46px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(109, 149, 204, 0.45);
-  background: linear-gradient(135deg, rgba(225, 239, 255, 0.98), rgba(198, 224, 255, 0.9));
-  font-size: 13px;
-  letter-spacing: -0.02em;
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 
 .nav-links {

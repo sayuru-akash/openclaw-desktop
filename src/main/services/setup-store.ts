@@ -1,14 +1,42 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SetupState } from "../../shared/types";
+import type { SetupStage, SetupState } from "../../shared/types";
 
 const defaultState: SetupState = {
   stage: "idle",
   requiresReboot: false,
-  resumeOnLogin: false,
   message: "Setup has not started yet.",
   updatedAt: new Date(0).toISOString()
 };
+
+const LEGACY_WSL_STAGES = new Set(["installing_wsl", "awaiting_reboot", "resuming_after_reboot"]);
+
+function normalizeStage(stage: unknown): { stage: SetupStage; migratedFromLegacy: boolean } {
+  if (typeof stage !== "string") {
+    return { stage: defaultState.stage, migratedFromLegacy: false };
+  }
+
+  if (LEGACY_WSL_STAGES.has(stage)) {
+    return { stage: "failed", migratedFromLegacy: true };
+  }
+
+  const allowed: SetupStage[] = [
+    "idle",
+    "checking_prereqs",
+    "installing_node",
+    "installing_openclaw",
+    "running_onboarding",
+    "starting_gateway",
+    "ready_for_manual_step",
+    "completed",
+    "failed"
+  ];
+  if (allowed.includes(stage as SetupStage)) {
+    return { stage: stage as SetupStage, migratedFromLegacy: false };
+  }
+
+  return { stage: defaultState.stage, migratedFromLegacy: false };
+}
 
 export class SetupStore {
   private readonly filePath: string;
@@ -21,12 +49,14 @@ export class SetupStore {
     try {
       const payload = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(payload) as Partial<SetupState>;
+      const normalizedStage = normalizeStage(parsed.stage);
 
       return {
-        stage: parsed.stage ?? defaultState.stage,
+        stage: normalizedStage.stage,
         requiresReboot: parsed.requiresReboot ?? defaultState.requiresReboot,
-        resumeOnLogin: parsed.resumeOnLogin ?? defaultState.resumeOnLogin,
-        message: parsed.message ?? defaultState.message,
+        message: normalizedStage.migratedFromLegacy
+          ? "Legacy WSL setup state detected. Run guided setup again for native Windows mode."
+          : parsed.message ?? defaultState.message,
         updatedAt: parsed.updatedAt ?? defaultState.updatedAt
       };
     } catch {

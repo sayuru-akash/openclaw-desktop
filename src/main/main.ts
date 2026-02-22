@@ -12,7 +12,6 @@ import { EnvironmentService } from "./services/environment";
 import { isGatewayRunningOutput } from "./services/parsers";
 import { SetupOrchestrator } from "./services/setup-orchestrator";
 import { SetupStore } from "./services/setup-store";
-import { WindowsStartupService } from "./services/windows-startup";
 import { WorkspaceFilesService } from "./services/workspace-files";
 
 const environmentService = new EnvironmentService();
@@ -43,7 +42,7 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     title: "OpenClaw Desktop",
-    backgroundColor: "#0f172a",
+    backgroundColor: "#181818",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -297,7 +296,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle("update:install", () => {
     autoUpdaterService.installDownloadedUpdate();
   });
-  ipcMain.handle("env:install-wsl", () => environmentService.installWsl());
+  ipcMain.handle("env:install-node", () => environmentService.installNodeRuntime());
+  ipcMain.handle("env:install-node-stream", () =>
+    environmentService.installNodeRuntimeStreaming((line, stream) => {
+      broadcastSetupProgress({
+        timestamp: new Date().toISOString(),
+        stage: "installing_node",
+        level: stream === "stderr" ? "warning" : "info",
+        source: stream,
+        message: line
+      });
+    })
+  );
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
   ipcMain.handle("env:install-openclaw-stream", () =>
     environmentService.installOpenClawStreaming((line, stream) => {
@@ -346,9 +356,6 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("setup:get-state", () => setupOrchestrator.getState());
   ipcMain.handle("setup:run-guided", () => setupOrchestrator.runGuidedSetup());
-  ipcMain.handle("setup:start-wsl", () => setupOrchestrator.startWslSetup());
-  ipcMain.handle("setup:resume", () => setupOrchestrator.resumeAfterReboot());
-  ipcMain.handle("setup:restart", () => setupOrchestrator.restartForSetup());
   ipcMain.handle("setup:complete-onboarding", () => setupOrchestrator.completeOnboardingFromUi());
 
   ipcMain.handle("wizard:start", (_event, params) => environmentService.wizardStart(params));
@@ -373,9 +380,7 @@ app.whenReady().then(async () => {
   configStore = new ConfigStore(app.getPath("userData"));
   setupOrchestrator = new SetupOrchestrator(
     environmentService,
-    new SetupStore(app.getPath("userData")),
-    new WindowsStartupService(),
-    { isPackaged: app.isPackaged, processExecPath: process.execPath }
+    new SetupStore(app.getPath("userData"))
   );
   setupOrchestrator.onProgress((event) => {
     broadcastSetupProgress(event);
@@ -384,7 +389,6 @@ app.whenReady().then(async () => {
     broadcastUpdateStatus(event);
   });
   registerIpcHandlers();
-  await setupOrchestrator.resumeAfterReboot();
   createWindow();
   createTray();
   await maybeAutoStartGateway();

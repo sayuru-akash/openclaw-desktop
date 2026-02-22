@@ -11,9 +11,9 @@ const byId = (id) => {
 
 const statusElements = {
   platform: byId("platformValue"),
-  wsl: byId("wslValue"),
-  distro: byId("distroValue"),
-  systemd: byId("systemdValue"),
+  node: byId("nodeValue"),
+  npm: byId("npmValue"),
+  runtime: byId("runtimeValue"),
   openclaw: byId("openClawValue"),
   gateway: byId("gatewayValue"),
   setupStage: byId("setupStageValue"),
@@ -22,14 +22,12 @@ const statusElements = {
 
 const actionButtons = {
   guidedSetup: byId("guidedSetupButton"),
-  installWsl: byId("installWslButton"),
+  installNode: byId("installNodeButton"),
   installOpenClaw: byId("installOpenClawButton"),
   runOnboarding: byId("runOnboardingButton"),
   gatewayStatus: byId("gatewayStatusButton"),
   gatewayStart: byId("gatewayStartButton"),
-  gatewayStop: byId("gatewayStopButton"),
-  resumeSetup: byId("resumeSetupButton"),
-  restartNow: byId("restartNowButton")
+  gatewayStop: byId("gatewayStopButton")
 };
 
 const workspaceButtons = {
@@ -174,10 +172,9 @@ const onboardingElements = {
   progress: byId("onboardingProgress"),
   openAdvanced: byId("onboardingOpenAdvancedButton"),
   begin: byId("onboardingBeginButton"),
-  wslStatus: byId("onboardingWslStatus"),
-  installWsl: byId("onboardingInstallWslButton"),
-  recheckWsl: byId("onboardingRecheckWslButton"),
-  restart: byId("onboardingRestartButton"),
+  nodeStatus: byId("onboardingNodeStatus"),
+  installNode: byId("onboardingInstallNodeButton"),
+  recheckNode: byId("onboardingRecheckNodeButton"),
   continueOpenClaw: byId("onboardingContinueToOpenClawButton"),
   openclawStatus: byId("onboardingOpenClawStatus"),
   installOpenClaw: byId("onboardingInstallOpenClawButton"),
@@ -199,7 +196,7 @@ const onboardingElements = {
 };
 
 const onboardingStepNodes = [...document.querySelectorAll("[data-onboarding-step]")];
-const ONBOARDING_STEP_ORDER = ["welcome", "wsl", "openclaw", "gateway", "model", "done"];
+const ONBOARDING_STEP_ORDER = ["welcome", "node", "openclaw", "gateway", "model", "done"];
 
 let lastEnvironmentStatus = null;
 let lastSetupState = null;
@@ -580,14 +577,11 @@ function renderNotes(notes) {
 }
 
 function setupStageLabel(stage) {
-  if (stage === "installing_wsl") {
-    return "Installing WSL";
+  if (stage === "checking_prereqs") {
+    return "Checking Prereqs";
   }
-  if (stage === "awaiting_reboot") {
-    return "Awaiting Reboot";
-  }
-  if (stage === "resuming_after_reboot") {
-    return "Resuming";
+  if (stage === "installing_node") {
+    return "Installing Node";
   }
   if (stage === "installing_openclaw") {
     return "Installing OpenClaw";
@@ -657,30 +651,24 @@ function isOnboardingRequired() {
 function updateOnboardingUiFromState() {
   const status = lastEnvironmentStatus;
   const setupState = lastSetupState;
-  const virtualizationWarning = Boolean(
-    status && Array.isArray(status.notes) && status.notes.some((note) => String(note).toLowerCase().includes("virtualization"))
-  );
 
   if (!status) {
-    onboardingElements.wslStatus.textContent = "Checking WSL status...";
+    onboardingElements.nodeStatus.textContent = "Checking Node.js status...";
     onboardingElements.openclawStatus.textContent = "Checking OpenClaw status...";
     onboardingElements.gatewayStatus.textContent = "Checking gateway status...";
     return;
   }
 
   if (!status.isWindows) {
-    onboardingElements.wslStatus.textContent = "This onboarding flow requires Windows.";
-  } else if (virtualizationWarning) {
-    onboardingElements.wslStatus.textContent =
-      "Virtualization looks OFF in BIOS/UEFI. Restart PC, open BIOS (F2/Del/Esc), enable Intel VT-x or AMD SVM, save, then retry.";
+    onboardingElements.nodeStatus.textContent = "This onboarding flow requires Windows.";
   } else if (setupState && setupState.requiresReboot) {
-    onboardingElements.wslStatus.textContent = "Restart required. Reopen app after restart, then recheck.";
-  } else if (status.wslInstalled && status.distroInstalled) {
-    onboardingElements.wslStatus.textContent = "WSL is ready.";
-  } else if (status.wslInstalled && !status.distroInstalled) {
-    onboardingElements.wslStatus.textContent = "WSL installed. Open Ubuntu once to initialize distro, then recheck.";
+    onboardingElements.nodeStatus.textContent = "Restart recommended after Node.js install. Restart Windows, then recheck.";
+  } else if (status.nodeInstalled && status.npmInstalled) {
+    onboardingElements.nodeStatus.textContent = "Node.js runtime is ready.";
+  } else if (status.nodeInstalled && !status.npmInstalled) {
+    onboardingElements.nodeStatus.textContent = "Node.js found but npm is missing. Reinstall Node.js runtime.";
   } else {
-    onboardingElements.wslStatus.textContent = "WSL not installed yet.";
+    onboardingElements.nodeStatus.textContent = "Node.js runtime not installed yet.";
   }
 
   onboardingElements.openclawStatus.textContent = status.openClawInstalled
@@ -717,7 +705,7 @@ function updateOnboardingUiFromState() {
     ? `Current: ${modelProvider} / ${modelName}`
     : "Set provider, model, and API key.";
 
-  onboardingElements.continueOpenClaw.disabled = !(status.wslInstalled && status.distroInstalled);
+  onboardingElements.continueOpenClaw.disabled = !(status.nodeInstalled && status.npmInstalled);
   onboardingElements.continueGateway.disabled = !status.openClawInstalled;
   onboardingElements.continueModel.disabled = !status.gatewayRunning;
   onboardingElements.continueDone.disabled = !(modelProvider && modelName);
@@ -725,8 +713,8 @@ function updateOnboardingUiFromState() {
 
 function getSuggestedOnboardingStep() {
   const status = lastEnvironmentStatus;
-  if (!status || !status.isWindows || !status.wslInstalled || !status.distroInstalled) {
-    return "wsl";
+  if (!status || !status.isWindows || !status.nodeInstalled || !status.npmInstalled) {
+    return "node";
   }
 
   if (!status.openClawInstalled) {
@@ -909,9 +897,13 @@ function renderSetupState(setupState) {
 function renderEnvironment(status) {
   lastEnvironmentStatus = status;
   setStatus(statusElements.platform, status.platform, status.isWindows ? "ok" : "bad");
-  setStatus(statusElements.wsl, status.wslInstalled ? "Installed" : "Missing", status.wslInstalled ? "ok" : "bad");
-  setStatus(statusElements.distro, status.distroInstalled ? "Ready" : "Missing", status.distroInstalled ? "ok" : "warn");
-  setStatus(statusElements.systemd, status.systemdEnabled ? "Enabled" : "Not enabled", status.systemdEnabled ? "ok" : "warn");
+  setStatus(statusElements.node, status.nodeInstalled ? "Installed" : "Missing", status.nodeInstalled ? "ok" : "bad");
+  setStatus(statusElements.npm, status.npmInstalled ? "Installed" : "Missing", status.npmInstalled ? "ok" : "warn");
+  setStatus(
+    statusElements.runtime,
+    status.nodeInstalled && status.npmInstalled ? "Ready" : "Needs setup",
+    status.nodeInstalled && status.npmInstalled ? "ok" : "warn"
+  );
   setStatus(statusElements.openclaw, status.openClawInstalled ? "Installed" : "Missing", status.openClawInstalled ? "ok" : "warn");
   setStatus(statusElements.gateway, status.gatewayRunning ? "Running" : "Stopped", status.gatewayRunning ? "ok" : "warn");
   renderNotes(status.notes);
@@ -1052,8 +1044,8 @@ function applyActionAvailability(status, setupState) {
   }
 
   const inProgressStageSet = new Set([
-    "installing_wsl",
-    "resuming_after_reboot",
+    "checking_prereqs",
+    "installing_node",
     "installing_openclaw",
     "running_onboarding",
     "starting_gateway"
@@ -1061,14 +1053,12 @@ function applyActionAvailability(status, setupState) {
   const inProgress = Boolean(setupState && inProgressStageSet.has(setupState.stage));
 
   actionButtons.guidedSetup.disabled = !status.isWindows || inProgress;
-  actionButtons.installWsl.disabled = !status.isWindows || status.wslInstalled || inProgress;
-  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.wslInstalled && status.distroInstalled);
+  actionButtons.installNode.disabled = !status.isWindows || (status.nodeInstalled && status.npmInstalled) || inProgress;
+  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.nodeInstalled && status.npmInstalled);
   actionButtons.runOnboarding.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStatus.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStart.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStop.disabled = inProgress || !status.openClawInstalled;
-  actionButtons.resumeSetup.disabled = !(setupState && setupState.stage === "awaiting_reboot");
-  actionButtons.restartNow.disabled = inProgress || !(setupState && setupState.requiresReboot);
 }
 
 async function withBusy(button, task) {
@@ -3191,41 +3181,33 @@ function wireActions() {
     });
   });
 
-  onboardingElements.installWsl.addEventListener("click", async (event) => {
+  onboardingElements.installNode.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Onboarding: installing WSL...");
-      const setupState = await withInlineProgress(
-        onboardingElements.wslStatus,
-        "Installing WSL (admin prompt may appear)",
-        () => window.openclaw.startWslSetup()
+      appendLog("Onboarding: installing Node.js runtime...");
+      const result = await withInlineProgress(
+        onboardingElements.nodeStatus,
+        "Installing Node.js (admin prompt may appear)",
+        () => window.openclaw.installNodeRuntimeStreaming()
       );
-      renderSetupState(setupState);
+      summarizeCommandResult("Node.js install", result);
       await runEnvironmentCheck();
       await refreshSetupState();
-      setOnboardingStep("wsl");
+      setOnboardingStep("node");
     });
   });
 
-  onboardingElements.recheckWsl.addEventListener("click", async (event) => {
+  onboardingElements.recheckNode.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
       await runEnvironmentCheck();
       await refreshSetupState();
-    });
-  });
-
-  onboardingElements.restart.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await withBusy(button, async () => {
-      const result = await window.openclaw.restartForSetup();
-      summarizeCommandResult("Restart request", result);
     });
   });
 
   onboardingElements.continueOpenClaw.addEventListener("click", () => {
-    if (!(lastEnvironmentStatus && lastEnvironmentStatus.wslInstalled && lastEnvironmentStatus.distroInstalled)) {
-      onboardingElements.wslStatus.textContent = "Finish WSL setup before continuing.";
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.nodeInstalled && lastEnvironmentStatus.npmInstalled)) {
+      onboardingElements.nodeStatus.textContent = "Finish Node.js setup before continuing.";
       return;
     }
     setOnboardingStep("openclaw");
@@ -3380,13 +3362,13 @@ function wireActions() {
   byId("guidedSetupButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Starting guided setup. This installs WSL, OpenClaw, and preps gateway for onboarding wizard.");
+      appendLog("Starting guided setup. This installs Node.js, OpenClaw, and preps gateway for onboarding wizard.");
       const setupState = await window.openclaw.runGuidedSetup();
       renderSetupState(setupState);
       appendLog(`Setup: ${setupState.message}`);
 
       if (setupState.requiresReboot) {
-        appendLog("Restart is required. Use 'Restart Windows Now' or reboot manually.");
+        appendLog("Restart is recommended. Reopen app and rerun guided setup if runtime checks still fail.");
       }
 
       await runEnvironmentCheck();
@@ -3402,18 +3384,12 @@ function wireActions() {
     });
   });
 
-  byId("installWslButton").addEventListener("click", async (event) => {
+  byId("installNodeButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Starting elevated WSL setup. Approve the Windows UAC prompt when asked.");
-      const setupState = await window.openclaw.startWslSetup();
-      renderSetupState(setupState);
-      appendLog(`Setup: ${setupState.message}`);
-
-      if (setupState.requiresReboot) {
-        appendLog("Restart is required. Use 'Restart Windows Now' or reboot manually.");
-      }
-
+      appendLog("Starting Node.js runtime installation. Approve Windows UAC prompt if asked.");
+      const result = await window.openclaw.installNodeRuntime();
+      summarizeCommandResult("Node.js install", result);
       await runEnvironmentCheck();
       await refreshSetupState();
     });
@@ -3422,7 +3398,7 @@ function wireActions() {
   byId("installOpenClawButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Installing OpenClaw in WSL...");
+      appendLog("Installing OpenClaw on native Windows...");
       const result = await window.openclaw.installOpenClaw();
       summarizeCommandResult("OpenClaw install", result);
       await runEnvironmentCheck();
@@ -3468,27 +3444,6 @@ function wireActions() {
       summarizeCommandResult("Gateway stop", result);
       await runEnvironmentCheck();
       await refreshSetupState();
-    });
-  });
-
-  byId("resumeSetupButton").addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await withBusy(button, async () => {
-      appendLog("Continuing guided setup after reboot...");
-      const setupState = await window.openclaw.resumeSetup();
-      renderSetupState(setupState);
-      appendLog(`Setup: ${setupState.message}`);
-      await runEnvironmentCheck();
-      await refreshSetupState();
-    });
-  });
-
-  byId("restartNowButton").addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await withBusy(button, async () => {
-      appendLog("Requesting Windows restart in 5 seconds...");
-      const result = await window.openclaw.restartForSetup();
-      summarizeCommandResult("Restart request", result);
     });
   });
 

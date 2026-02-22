@@ -3,11 +3,13 @@ import type { CommandResult } from "../../shared/types";
 
 interface RunCommandOptions {
   okExitCodes?: number[];
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export function runCommand(file: string, args: string[] = [], options: RunCommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve) => {
-    execFile(file, args, { encoding: "utf8" }, (error, stdout, stderr) => {
+    execFile(file, args, { encoding: "utf8", cwd: options.cwd, env: options.env }, (error, stdout, stderr) => {
       const normalizedStdout = stdout ?? "";
       const normalizedStderr = stderr ?? "";
       const okExitCodes = new Set([0, ...(options.okExitCodes ?? [])]);
@@ -52,7 +54,11 @@ export function runCommandStreaming(
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const okExitCodes = new Set([0, ...(options.okExitCodes ?? [])]);
-    const child = spawn(file, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(file, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: options.cwd,
+      env: options.env
+    });
 
     let stdout = "";
     let stderr = "";
