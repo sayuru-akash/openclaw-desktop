@@ -13,19 +13,19 @@
         <h1>Control Center</h1>
         <p class="subhead">Chat in the center. Configure from the side.</p>
         <div class="workspace-switcher">
-          <button id="showChatButton" class="button primary">Chat</button>
-          <button id="showSetupButton" class="button">Setup</button>
-          <button id="showControlButton" class="button">Control</button>
+          <button id="showChatButton" class="button primary with-icon"><span class="btn-icon icon-chat" aria-hidden="true"></span><span>Chat</span></button>
+          <button id="showSetupButton" class="button with-icon"><span class="btn-icon icon-setup" aria-hidden="true"></span><span>Setup</span></button>
+          <button id="showControlButton" class="button with-icon"><span class="btn-icon icon-control" aria-hidden="true"></span><span>Control</span></button>
         </div>
         <div class="feature-switcher">
           <p class="subhead">Menu</p>
-          <button class="button feature-nav-button" data-feature-pane-target="onboarding">Onboarding</button>
-          <button class="button feature-nav-button" data-feature-pane-target="channels">Channels</button>
-          <button class="button feature-nav-button" data-feature-pane-target="model">Models</button>
-          <button class="button feature-nav-button" data-feature-pane-target="files">Files</button>
-          <button class="button feature-nav-button" data-feature-pane-target="settings">Settings</button>
-          <button class="button feature-nav-button" data-feature-pane-target="updates">Updates</button>
-          <button class="button feature-nav-button" data-feature-pane-target="logs">Logs</button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="onboarding"><span class="btn-icon icon-onboarding" aria-hidden="true"></span><span>Onboarding</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="channels"><span class="btn-icon icon-channels" aria-hidden="true"></span><span>Channels</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="model"><span class="btn-icon icon-models" aria-hidden="true"></span><span>Models</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="files"><span class="btn-icon icon-files" aria-hidden="true"></span><span>Files</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="settings"><span class="btn-icon icon-settings" aria-hidden="true"></span><span>Settings</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="updates"><span class="btn-icon icon-updates" aria-hidden="true"></span><span>Updates</span></button>
+          <button class="button feature-nav-button with-icon" data-feature-pane-target="logs"><span class="btn-icon icon-logs" aria-hidden="true"></span><span>Logs</span></button>
         </div>
       </header>
 
@@ -33,7 +33,7 @@
         <section class="panel status-panel">
           <div class="panel-header">
             <h2>System</h2>
-            <button id="checkEnvButton" class="button">Refresh</button>
+            <button id="checkEnvButton" class="button with-icon"><span class="btn-icon icon-refresh" aria-hidden="true"></span><span>Refresh</span></button>
           </div>
 
           <div class="status-grid">
@@ -74,15 +74,15 @@
           <div class="divider"></div>
           <p class="panel-caption command-caption">Quick Actions</p>
           <div class="actions compact-actions">
-            <button id="guidedSetupButton" class="button primary">Quick Setup</button>
-            <button id="installNodeButton" class="button">Install Node</button>
-            <button id="installOpenClawButton" class="button">Install OpenClaw</button>
-            <button id="runOnboardingButton" class="button">CLI Onboard</button>
+            <button id="guidedSetupButton" class="button primary with-icon"><span class="btn-icon icon-quick-setup" aria-hidden="true"></span><span>Quick Setup</span></button>
+            <button id="installNodeButton" class="button with-icon"><span class="btn-icon icon-install-node" aria-hidden="true"></span><span>Install Node</span></button>
+            <button id="installOpenClawButton" class="button with-icon"><span class="btn-icon icon-install-openclaw" aria-hidden="true"></span><span>Install OpenClaw</span></button>
+            <button id="runOnboardingButton" class="button with-icon"><span class="btn-icon icon-cli" aria-hidden="true"></span><span>CLI Onboard</span></button>
           </div>
           <div class="actions compact-actions">
-            <button id="gatewayStartButton" class="button">Start Gateway</button>
-            <button id="gatewayStopButton" class="button">Stop Gateway</button>
-            <button id="gatewayStatusButton" class="button">Gateway Status</button>
+            <button id="gatewayStartButton" class="button with-icon"><span class="btn-icon icon-start" aria-hidden="true"></span><span>Start Gateway</span></button>
+            <button id="gatewayStopButton" class="button with-icon"><span class="btn-icon icon-stop" aria-hidden="true"></span><span>Stop Gateway</span></button>
+            <button id="gatewayStatusButton" class="button with-icon"><span class="btn-icon icon-status" aria-hidden="true"></span><span>Gateway Status</span></button>
           </div>
 
           <div class="divider"></div>
@@ -90,13 +90,6 @@
             <h3>Notes</h3>
             <ul id="notesList"></ul>
           </div>
-
-          <div class="divider"></div>
-          <div class="panel-header compact-header">
-            <h2>Live Log</h2>
-            <span class="panel-caption">Non-blocking</span>
-          </div>
-          <pre id="logOutput" class="log">App ready.</pre>
         </section>
       </aside>
 
@@ -489,10 +482,11 @@
           </section>
 
           <section class="feature-pane hidden" data-feature-pane="logs">
-            <div class="notes">
-              <h3>Log</h3>
-              <p class="panel-caption">Live log is pinned in the right rail.</p>
+            <div class="panel-header compact-header">
+              <h2>Live Log</h2>
+              <span class="panel-caption">Non-blocking</span>
             </div>
+            <pre id="logOutput" class="log logs-page-log">App ready.</pre>
           </section>
         </section>
       </main>

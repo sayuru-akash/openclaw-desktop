@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import type {
   ManagedChannel,
@@ -31,7 +32,17 @@ function resolvePreloadFile(): string {
 }
 
 function resolveRendererFile(): string {
-  return path.join(app.getAppPath(), "dist", "renderer", "index.html");
+  const appPath = app.getAppPath();
+  const reactRendererPath = path.join(appPath, "dist", "renderer-react", "index.html");
+  const legacyRendererPath = path.join(appPath, "dist", "renderer", "index.html");
+  const uiMode = (process.env.OPENCLAW_UI_EXPERIMENT || "react").toLowerCase();
+
+  // React renderer is now the default. Set OPENCLAW_UI_EXPERIMENT=legacy to force the old UI.
+  if (uiMode !== "legacy" && existsSync(reactRendererPath)) {
+    return reactRendererPath;
+  }
+
+  return legacyRendererPath;
 }
 
 function createWindow(): void {

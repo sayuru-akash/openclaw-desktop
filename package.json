@@ -6,12 +6,14 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build:main": "tsc -p tsconfig.main.json",
     "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.main.json",
     "build:assets": "node scripts/copy-renderer.mjs",
-    "build": "npm run clean && npm run build:main && npm run build:assets",
+    "build:renderer-react": "vite build --config vite.config.mjs",
+    "build": "npm run clean && npm run build:main && npm run build:assets && npm run build:renderer-react",
     "dev": "npm run build && electron .",
+    "dev:react": "npm run build && cross-env OPENCLAW_UI_EXPERIMENT=react electron .",
     "start": "electron .",
     "test": "npm run build:test && node --test tests/*.test.js",
     "dist": "npm run build && electron-builder --win"
@@ -27,7 +29,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "openclaw_logo.ico",
+      "icon": "openclaw_logo256.ico",
       "target": [
         {
           "target": "nsis",
@@ -38,17 +40,33 @@
       ]
     },
     "nsis": {
-      "installerIcon": "openclaw_logo.ico",
-      "uninstallerIcon": "openclaw_logo.ico"
+      "installerIcon": "openclaw_logo256.ico",
+      "uninstallerIcon": "openclaw_logo256.ico"
     }
   },
   "devDependencies": {
     "@types/node": "^22.13.8",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.24",
+    "cross-env": "^7.0.3",
     "electron": "^35.0.0",
     "electron-builder": "^25.1.8",
-    "typescript": "^5.8.2"
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.1"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2"
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron-updater": "^6.6.2",
+    "lucide-react": "^0.575.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.5.0"
   }
 }

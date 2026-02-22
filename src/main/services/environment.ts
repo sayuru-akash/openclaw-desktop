@@ -42,7 +42,7 @@ export class EnvironmentService {
     };
 
     if (!status.isWindows) {
-      status.notes.push("This app is designed for Windows. Setup checks are disabled on non-Windows hosts.");
+      status.notes.push("Setup checks are unavailable in this environment.");
       return status;
     }
 

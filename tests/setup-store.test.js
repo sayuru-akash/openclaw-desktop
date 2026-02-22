@@ -31,7 +31,8 @@ test("SetupStore migrates legacy WSL stages to failed native state", async () =>
 
     assert.equal(loaded.stage, "failed");
     assert.equal(loaded.requiresReboot, true);
-    assert.match(loaded.message, /legacy wsl setup state detected/i);
+    assert.match(loaded.message, /legacy setup state detected/i);
+    assert.doesNotMatch(loaded.message, /wsl/i);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

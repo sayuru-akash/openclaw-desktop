@@ -1,6 +1,6 @@
 # OpenClaw Desktop Product Memory
 
-Last updated: 2026-02-17
+Last updated: 2026-02-22
 
 ## 1) Product Goal
 
@@ -28,14 +28,15 @@ Design principle:
 Separate app from OpenClaw repo (no fork required for wrapper flow).
 
 Our app responsibilities:
-- Windows + WSL checks/install
-- OpenClaw install in WSL
+- Windows prerequisite checks
+- Node.js runtime bootstrap (auto-install)
+- OpenClaw native install in app-managed prefix
 - gateway lifecycle (start/stop/status)
 - onboarding wizard UI
 - in-app embedded control experience
 
 OpenClaw responsibilities:
-- CLI install and runtime in WSL
+- CLI/runtime behavior
 - gateway service
 - onboarding wizard logic (RPC)
 - control UI served locally by gateway
@@ -43,10 +44,10 @@ OpenClaw responsibilities:
 ## 4) Integration Model With OpenClaw
 
 ### 4.1 Commands we run
-- `wsl.exe --status`
-- `wsl.exe --install` (elevated when needed)
-- `wsl.exe bash -lc "curl -fsSL https://openclaw.ai/install.sh | bash"`
-- `wsl.exe bash -lc "openclaw gateway start|stop|status"`
+- `node --version`
+- `npm --version`
+- `npm install -g openclaw --prefix %LOCALAPPDATA%\OpenClawDesktop\npm --no-fund --no-audit`
+- `openclaw gateway start|stop|status`
 
 ### 4.2 Onboarding method (primary)
 - Use Gateway wizard RPC from app UI:
@@ -67,12 +68,11 @@ No external browser dependency for normal user flow.
 
 1. Install app (`.exe`).
 2. First launch runs environment checks.
-3. If WSL missing, app requests elevation and installs WSL.
-4. If reboot required, app saves state and resumes after login.
-5. App installs OpenClaw in WSL.
-6. App starts gateway and verifies health.
-7. User completes onboarding via in-app wizard UI.
-8. App switches automatically to embedded Control view.
+3. If Node.js runtime missing, app installs Node.js LTS (winget first, MSI fallback).
+4. App installs OpenClaw natively.
+5. App starts gateway and verifies health.
+6. User completes onboarding via in-app wizard UI.
+7. App switches automatically to embedded Chat view.
 
 ## 6) Non-Technical UX Rules
 
@@ -89,8 +89,7 @@ No external browser dependency for normal user flow.
 ## 7) Setup/Recovery Requirements
 
 - Handle UAC prompts clearly.
-- Detect reboot-required states and continue automatically.
-- Persist setup stage so app can resume safely.
+- Persist setup stage and keep retry flow simple.
 - Support retry at each failed step.
 - Keep logs visible and exportable for support.
 
@@ -104,8 +103,8 @@ No external browser dependency for normal user flow.
 
 ## 9) Current Product Decisions
 
-- Focus on local WSL-based OpenClaw setup first.
-- No remote fallback mode in initial scope.
+- Focus on native local Windows OpenClaw setup.
+- No WSL path in current product.
 - No OpenClaw fork for wrapper layer.
 - In-app onboarding wizard is mandatory path (TUI fallback only).
 - In-app Control embedding is default post-setup experience.
@@ -117,16 +116,17 @@ No external browser dependency for normal user flow.
 ## 10) Done vs Next
 
 Implemented:
-- elevated WSL setup + reboot-resume
-- guided setup orchestration
+- native Windows setup orchestration
+- Node.js auto-install flow (winget + MSI fallback)
+- OpenClaw native install via npm prefix
 - live setup progress stream
 - in-app wizard RPC wiring
-- embedded Control workspace with fallback
+- embedded Control/Chat workspaces with fallback
 
 Next priorities:
 1. Improve wizard step UX polish and validation.
 2. Add diagnostics export + support bundle.
-3. Add robust test matrix on clean Win10/Win11 VMs.
+3. Expand Win10/Win11 VM test matrix coverage.
 4. Ship signed installer + auto-update.
 
 ## 11) Definition of Success

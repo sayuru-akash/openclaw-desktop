@@ -9,6 +9,12 @@ npm install
 npm run dev
 ```
 
+Run React migration preview renderer:
+
+```bash
+npm run dev:react
+```
+
 Build renderer + main process:
 
 ```bash

@@ -86,8 +86,9 @@ export function Paywall({ open, onClose, config }) {
             <button className="paywall-close" type="button" onClick={onClose} aria-label="Close">
               ×
             </button>
-            <p className="eyebrow">Checkout</p>
-            <h3 id="paywall-title">Pay {priceLabel} and Download</h3>
+            <p className="eyebrow">One-time · Instant download</p>
+            <h3 id="paywall-title">OpenClaw Desktop</h3>
+            <p className="paywall-price">{priceLabel}</p>
             <p className="paywall-copy">Enter your email. We open Polar checkout next.</p>
             <form id="paywall-form" onSubmit={handleSubmit} noValidate>
               <label htmlFor="paywall-email">Email</label>
@@ -105,20 +106,11 @@ export function Paywall({ open, onClose, config }) {
                 {error}
               </p>
               <button className="button primary paywall-submit" type="submit">
-                Continue to checkout
+                Continue to checkout →
               </button>
             </form>
-            <p className="paywall-note">
-              After payment, access your installer from{" "}
-              {portalUrl && !portalUrl.includes("your-org") ? (
-                <a href={portalUrl} target="_blank" rel="noreferrer">
-                  Polar customer portal
-                </a>
-              ) : (
-                <span>Polar customer portal</span>
-              )}
-              .
-            </p>
+            <p className="paywall-guarantee">✦ Doesn't run on your PC? Reply to your receipt — full refund, no hoops.</p>
+            <p className="paywall-note">Instant access after payment · Secured by Polar</p>
           </motion.section>
         </motion.div>
       )}

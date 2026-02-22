@@ -1,11 +1,11 @@
 # Windows Test Matrix
 
-Last updated: 2026-02-18
+Last updated: 2026-02-22
 
 ## Goal
 
-Validate that setup, onboarding, and background runtime work on:
-- Windows 10 (build 19041+)
+Validate native Windows setup, onboarding, and background runtime on:
+- Windows 10 (build 19045+)
 - Windows 11
 
 ## Environments
@@ -14,40 +14,36 @@ Validate that setup, onboarding, and background runtime work on:
 2. Windows 11 Pro 23H2/24H2 (build 22631+/26100+)
 
 Use clean VMs for each run:
-- no WSL
 - no Node.js
 - no OpenClaw
 - default Windows Defender settings
 
 ## Pre-flight checks
 
-1. Virtualization enabled in BIOS/host.
-2. VM user has admin rights.
-3. Stable internet access.
-4. Snapshot VM before install.
+1. VM user has admin rights.
+2. Stable internet access.
+3. Snapshot VM before install.
 
 ## Test cases
 
 1. Installer flow
 - Install `.exe`.
 - Launch app.
-- Verify app opens with Setup workspace.
+- Verify app opens with onboarding workspace.
 
-2. WSL elevated install + reboot resume
+2. Node.js runtime bootstrap
 - Start guided setup.
-- Accept UAC prompt.
-- If reboot requested, reboot.
-- Verify app resumes setup state after login.
+- Accept UAC prompt if shown.
+- Verify Node.js + npm status become `Installed`.
 
-3. OpenClaw install in WSL
+3. OpenClaw native install
 - Verify OpenClaw install step completes.
-- Verify `OpenClaw CLI` status becomes `Installed`.
+- Verify `OpenClaw` status becomes `Installed`.
 
 4. Onboarding in app
-- Start wizard.
 - Complete provider/model/auth steps.
 - Complete channel setup (WhatsApp or Telegram).
-- Verify wizard reaches done state.
+- Verify onboarding reaches done state and hands off to chat.
 
 5. Gateway lifecycle
 - Start gateway.
@@ -94,9 +90,9 @@ Use clean VMs for each run:
 Release candidate is acceptable when:
 1. All critical flows pass on both Windows 10 and Windows 11.
 2. No blocker issue in setup, onboarding, tray control, or gateway runtime.
-3. No data-loss or unrecoverable states after reboot/sign-in resume.
+3. No data-loss or unrecoverable states after runtime install failures.
 
 ## Known constraints
 
-1. Windows 10 below build 19041 may not support seamless WSL install flow.
-2. Auto-update requires packaged app + configured publish provider.
+1. Auto-update requires packaged app + configured publish provider.
+2. Unsiged installer builds will show Windows SmartScreen warning.

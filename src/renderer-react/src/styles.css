@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 10.2%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 96%;
+    --muted: 0 0% 15.5%;
+    --muted-foreground: 0 0% 67%;
+    --border: 0 0% 22%;
+    --input: 0 0% 22%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 96%;
+    --accent: 0 0% 17%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 62% 46%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 0 0% 75%;
+    --sidebar-background: 0 0% 11.5%;
+    --sidebar-foreground: 0 0% 96%;
+  }
+
+  :root.light {
+    --background: 35 24% 96%;
+    --foreground: 0 0% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 14%;
+    --muted: 30 20% 93%;
+    --muted-foreground: 0 0% 42%;
+    --border: 28 15% 85%;
+    --input: 28 15% 84%;
+    --primary: 0 0% 11%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 35 20% 95%;
+    --secondary-foreground: 0 0% 18%;
+    --accent: 278 38% 92%;
+    --accent-foreground: 0 0% 18%;
+    --destructive: 0 64% 47%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 258 22% 58%;
+    --sidebar-background: 35 19% 92%;
+    --sidebar-foreground: 0 0% 14%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full w-full;
+  }
+
+  body {
+    @apply m-0 bg-background text-foreground antialiased;
+    font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+    line-height: 1.45;
+  }
+}
