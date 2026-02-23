@@ -95,7 +95,7 @@ interface StatusTableRow {
   variant: "default" | "success" | "warning" | "danger";
 }
 
-type OnboardingStepId = "welcome" | "account" | "runtime" | "openclaw" | "gateway" | "model" | "done";
+type OnboardingStepId = "welcome" | "runtime" | "openclaw" | "gateway" | "model" | "done";
 
 interface OnboardingStep {
   id: OnboardingStepId;
@@ -105,8 +105,7 @@ interface OnboardingStep {
 }
 
 const onboardingSteps: OnboardingStep[] = [
-  { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Set up OpenClaw in a few steps." },
-  { id: "account", label: "Account", title: "Sign In", subtitle: "Sign in to your OpenClaw account." },
+  { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Sign in and set up OpenClaw." },
   { id: "runtime", label: "Runtime", title: "Node Runtime", subtitle: "Install Node.js and npm." },
   { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI." },
   { id: "gateway", label: "Gateway", title: "Start Gateway", subtitle: "Start local gateway." },
@@ -563,13 +562,6 @@ export function App() {
   const installUpdate = () => runAction("Install update", async () => {
     await window.openclaw.installDownloadedUpdate();
     appendLog("Installer requested. App may restart.");
-  });
-
-  const openAuthSignIn = () => runAction("Open sign-in", async () => {
-    const opened = await window.openclaw.openAuthSignIn();
-    if (!opened) {
-      throw new Error("Could not open sign-in page.");
-    }
   });
 
   const completeAuthHandoff = () => runAction("Browser sign-in", async () => {
@@ -1243,8 +1235,6 @@ export function App() {
   const onboardingStepDone = (stepId: OnboardingStepId) => {
     switch (stepId) {
       case "welcome":
-        return wizardStepIndex > 0;
-      case "account":
         return Boolean(configDraft?.accountAuthorized);
       case "runtime":
         return runtimeReady === true;
@@ -1273,11 +1263,6 @@ export function App() {
     const step = currentOnboardingStep.id;
 
     if (step === "welcome") {
-      advanceOnboarding();
-      return;
-    }
-
-    if (step === "account") {
       if (configDraft?.accountAuthorized) {
         advanceOnboarding();
         return;
@@ -1375,8 +1360,6 @@ export function App() {
   const onboardingPrimaryLabel = (() => {
     switch (currentOnboardingStep.id) {
       case "welcome":
-        return "Start";
-      case "account":
         return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
         return runtimeReady ? "Continue" : "Install Node";
@@ -1438,34 +1421,20 @@ export function App() {
             <div className="flex-1 space-y-4">
               {currentOnboardingStep.id === "welcome" ? (
                 <Card>
-                  <CardContent className="pt-5 text-sm text-muted-foreground">
-                    Setup installs runtime, OpenClaw, gateway, and model.
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {currentOnboardingStep.id === "account" ? (
-                <Card>
-                  <CardContent className="space-y-3 pt-5">
-                    <p className="text-sm text-muted-foreground">
-                      {configDraft?.authWebBaseUrl || authSession?.baseUrl}
-                    </p>
+                  <CardContent className="space-y-3 pt-5 text-sm text-muted-foreground">
+                    <p>{configDraft?.authWebBaseUrl || authSession?.baseUrl}</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">Session</span>
+                      <span>Session</span>
                       <Badge variant={configDraft?.accountAuthorized ? "success" : "warning"}>
                         {configDraft?.accountAuthorized ? "Signed in" : "Signed out"}
                       </Badge>
                     </div>
                     {configDraft?.accountUserId ? (
-                      <p className="text-xs text-muted-foreground">User: {configDraft.accountUserId}</p>
+                      <p className="text-xs">User: {configDraft.accountUserId}</p>
                     ) : null}
-
                     <div className="flex flex-wrap gap-2">
                       <Button onClick={() => void completeAuthHandoff()} disabled={isBusy}>
                         Sign In
-                      </Button>
-                      <Button variant="outline" onClick={() => void openAuthSignIn()} disabled={isBusy}>
-                        Open Sign-In
                       </Button>
                       <Button variant="outline" onClick={() => void verifyAuthSession()} disabled={isBusy}>
                         Check Session

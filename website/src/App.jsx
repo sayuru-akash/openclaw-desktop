@@ -19,10 +19,8 @@ import { SiWhatsapp, SiTelegram } from "react-icons/si";
 import { AnimatedTitle } from "./components/AnimatedTitle";
 import { Reveal } from "./components/Reveal";
 import { TiltCard } from "./components/TiltCard";
-import { Paywall } from "./components/Paywall";
 
-const config = window.OPENCLAW_WEBSITE_CONFIG || {};
-const priceLabel = config?.appPriceLabel?.trim() || "$5";
+const DOWNLOAD_URL = "https://github.com/hith3sh/openclaw-desktop/releases/latest/download/OpenClaw-Desktop-Setup.exe";
 
 const features = [
   { icon: <Monitor size={22} />, title: "Guided Windows Setup", body: "One-click installer sets up Node.js and OpenClaw. No terminal, no reboots, no virtualization." },
@@ -63,7 +61,6 @@ const steps = [
 ];
 
 export default function App() {
-  const [paywallOpen, setPaywallOpen] = useState(false);
   const [navVisible, setNavVisible] = useState(true);
   const [navScrolled, setNavScrolled] = useState(false);
   const lastScrollY = useRef(0);
@@ -101,9 +98,9 @@ export default function App() {
               <a href="#how">How It Works</a>
               <a href="#download">Download</a>
             </div>
-            <button className="button ghost" type="button" onClick={() => setPaywallOpen(true)}>
-              Get App
-            </button>
+            <a className="button ghost" href={DOWNLOAD_URL}>
+              Download
+            </a>
           </nav>
         </header>
       </div>
@@ -128,9 +125,9 @@ export default function App() {
 
           <Reveal delay={0.15}>
             <div className="hero-cta">
-              <button className="button primary" type="button" onClick={() => setPaywallOpen(true)}>
-                Get OpenClaw Desktop
-              </button>
+              <a className="button primary" href={DOWNLOAD_URL}>
+                Download for Free
+              </a>
               <a className="button soft" href="#how">
                 See Setup Flow
               </a>
@@ -293,12 +290,12 @@ export default function App() {
             <AnimatedTitle className="final-cta-title">OpenClaw for Windows.</AnimatedTitle>
             <p className="final-cta-meta">Windows 10+ · VM &amp; RDP ready</p>
             <div className="hero-cta">
-              <button className="button primary button--icon final-cta-btn" type="button" onClick={() => setPaywallOpen(true)}>
+              <a className="button primary button--icon final-cta-btn" href={DOWNLOAD_URL}>
                 <Monitor size={16} />
                 Download for Windows
-              </button>
+              </a>
             </div>
-            <small className="final-cta-note">Secured by Polar</small>
+            <small className="final-cta-note">Free download · Subscription managed in-app</small>
           </section>
         </Reveal>
       </main>
@@ -307,7 +304,6 @@ export default function App() {
         <p>© {year} OpenClaw Desktop</p>
       </footer>
 
-      <Paywall open={paywallOpen} onClose={() => setPaywallOpen(false)} config={config} />
     </>
   );
 }
