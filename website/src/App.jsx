@@ -20,7 +20,7 @@ import { AnimatedTitle } from "./components/AnimatedTitle";
 import { Reveal } from "./components/Reveal";
 import { TiltCard } from "./components/TiltCard";
 
-const DOWNLOAD_URL = "https://github.com/hith3sh/openclaw-desktop/releases/latest/download/OpenClaw-Desktop-Setup.exe";
+const DOWNLOAD_URL = "https://github.com/hith3sh/openclaw-desktop/releases/latest";
 
 const features = [
   { icon: <Monitor size={22} />, title: "Guided Windows Setup", body: "One-click installer sets up Node.js and OpenClaw. No terminal, no reboots, no virtualization." },

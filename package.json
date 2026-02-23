@@ -1,10 +1,10 @@
 {
   "name": "openclaw-desktop",
-  "version": "0.1.0",
+  "version": "0.0.5",
   "description": "Windows-first Electron wrapper for OpenClaw with guided onboarding.",
   "main": "dist/main/main.js",
   "author": "",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build:main": "tsc -p tsconfig.main.json",
