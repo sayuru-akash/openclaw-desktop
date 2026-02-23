@@ -21,7 +21,7 @@ import { Reveal } from "./components/Reveal";
 import { TiltCard } from "./components/TiltCard";
 import brandMark from "../../assets/branding/openclaw.svg";
 
-const DOWNLOAD_URL = "https://github.com/hith3sh/openclaw-desktop/releases/latest";
+const DOWNLOAD_URL = "/api/download";
 
 const features = [
   { icon: <Monitor size={22} />, title: "Guided Windows Setup", body: "One-click installer sets up Node.js and OpenClaw. No terminal, no reboots, no virtualization." },
