@@ -6,6 +6,8 @@ import {
   useState,
   type ComponentType
 } from "react";
+import darkBrandLogo from "../../../assets/branding/openclaw_logo.png";
+import lightBrandLogo from "../../../assets/branding/openclaw_logo_light_theme.png";
 import {
   ArrowUpCircle,
   Bot,
@@ -1377,7 +1379,7 @@ export function App() {
   })();
 
   const isWelcomeStep = currentOnboardingStep.id === "welcome";
-  const brandLogoSrc = theme === "light" ? "./openclaw_logo_light_theme.png" : "./openclaw_logo.png";
+  const brandLogoSrc = theme === "light" ? lightBrandLogo : darkBrandLogo;
 
   const renderOnboardingWizard = () => (
     <div className="h-full w-full bg-background p-4">

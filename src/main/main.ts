@@ -366,37 +366,62 @@ function showTrayMessage(content: string, title = "OpenClaw Desktop"): void {
 }
 
 async function refreshTrayGatewayStatus(showMessage = false): Promise<void> {
-  const result = await environmentService.gatewayStatus();
-  trayGatewayRunning = result.ok && isGatewayRunningOutput(`${result.stdout} ${result.stderr}`);
-  tray?.setToolTip(`OpenClaw Desktop - Gateway ${trayGatewayRunning ? "Running" : "Stopped"}`);
-  if (tray) {
-    tray.setContextMenu(buildTrayMenu());
-  }
+  try {
+    const result = await environmentService.gatewayStatus();
+    trayGatewayRunning = result.ok && isGatewayRunningOutput(`${result.stdout} ${result.stderr}`);
+    tray?.setToolTip(`OpenClaw Desktop - Gateway ${trayGatewayRunning ? "Running" : "Stopped"}`);
+    if (tray) {
+      tray.setContextMenu(buildTrayMenu());
+    }
 
-  if (showMessage) {
-    const detail = result.ok
-      ? trayGatewayRunning ? "Gateway is running." : "Gateway is stopped."
-      : result.stderr || result.stdout || "Could not check gateway status.";
-    showTrayMessage(detail, "Gateway Status");
+    if (showMessage) {
+      const detail = result.ok
+        ? trayGatewayRunning ? "Gateway is running." : "Gateway is stopped."
+        : result.stderr || result.stdout || "Could not check gateway status.";
+      showTrayMessage(detail, "Gateway Status");
+    }
+  } catch (error) {
+    trayGatewayRunning = false;
+    tray?.setToolTip("OpenClaw Desktop - Gateway Unknown");
+    if (tray) {
+      tray.setContextMenu(buildTrayMenu());
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    if (showMessage) {
+      showTrayMessage(detail, "Gateway Status");
+    }
+    console.warn(`[tray] gateway status refresh failed: ${detail}`);
   }
 }
 
 async function handleTrayGatewayStart(): Promise<void> {
-  const result = await environmentService.gatewayStart();
-  await refreshTrayGatewayStatus(false);
-  const detail = result.ok
-    ? "Gateway start requested."
-    : result.stderr || result.stdout || "Gateway start failed.";
-  showTrayMessage(detail, "Gateway Start");
+  try {
+    const result = await environmentService.gatewayStart();
+    await refreshTrayGatewayStatus(false);
+    const detail = result.ok
+      ? "Gateway start requested."
+      : result.stderr || result.stdout || "Gateway start failed.";
+    showTrayMessage(detail, "Gateway Start");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showTrayMessage(detail, "Gateway Start");
+    console.warn(`[tray] gateway start failed: ${detail}`);
+  }
 }
 
 async function handleTrayGatewayStop(): Promise<void> {
-  const result = await environmentService.gatewayStop();
-  await refreshTrayGatewayStatus(false);
-  const detail = result.ok
-    ? "Gateway stop requested."
-    : result.stderr || result.stdout || "Gateway stop failed.";
-  showTrayMessage(detail, "Gateway Stop");
+  try {
+    const result = await environmentService.gatewayStop();
+    await refreshTrayGatewayStatus(false);
+    const detail = result.ok
+      ? "Gateway stop requested."
+      : result.stderr || result.stdout || "Gateway stop failed.";
+    showTrayMessage(detail, "Gateway Stop");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showTrayMessage(detail, "Gateway Stop");
+    console.warn(`[tray] gateway stop failed: ${detail}`);
+  }
 }
 
 function buildTrayMenu(): Menu {
@@ -408,19 +433,28 @@ function buildTrayMenu(): Menu {
     {
       label: "Gateway Status",
       click: () => {
-        void refreshTrayGatewayStatus(true);
+        void refreshTrayGatewayStatus(true).catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.warn(`[tray] gateway status click failed: ${detail}`);
+        });
       }
     },
     {
       label: "Start Gateway",
       click: () => {
-        void handleTrayGatewayStart();
+        void handleTrayGatewayStart().catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.warn(`[tray] gateway start click failed: ${detail}`);
+        });
       }
     },
     {
       label: "Stop Gateway",
       click: () => {
-        void handleTrayGatewayStop();
+        void handleTrayGatewayStop().catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.warn(`[tray] gateway stop click failed: ${detail}`);
+        });
       }
     },
     {
@@ -463,7 +497,10 @@ function createTray(): void {
     showMainWindow();
   });
 
-  void refreshTrayGatewayStatus(false);
+  void refreshTrayGatewayStatus(false).catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[tray] initial gateway refresh failed: ${detail}`);
+  });
 }
 
 function broadcastSetupProgress(event: SetupProgressEvent): void {
@@ -624,7 +661,10 @@ async function maybeAutoStartGateway(): Promise<void> {
 
   const status = await environmentService.getEnvironmentStatus();
   if (status.isWindows && status.openClawInstalled && !status.gatewayRunning) {
-    void environmentService.gatewayStart();
+    void environmentService.gatewayStart().catch((error) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[startup] auto-start gateway failed: ${detail}`);
+    });
   }
 }
 
@@ -654,6 +694,9 @@ app.whenReady().then(async () => {
 
     showMainWindow();
   });
+}).catch((error) => {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`[app] startup failed: ${detail}`);
 });
 
 app.on("before-quit", () => {

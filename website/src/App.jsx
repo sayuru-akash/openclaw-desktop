@@ -19,6 +19,7 @@ import { SiWhatsapp, SiTelegram } from "react-icons/si";
 import { AnimatedTitle } from "./components/AnimatedTitle";
 import { Reveal } from "./components/Reveal";
 import { TiltCard } from "./components/TiltCard";
+import brandMark from "../../assets/branding/openclaw.svg";
 
 const DOWNLOAD_URL = "https://github.com/hith3sh/openclaw-desktop/releases/latest";
 
@@ -90,7 +91,7 @@ export default function App() {
         <header className="shell">
           <nav className="top-nav">
             <a href="#" className="brand">
-              <img src="/openclaw.svg" alt="" aria-hidden="true" className="brand-logo" />
+              <img src={brandMark} alt="" aria-hidden="true" className="brand-logo" />
               <span>OpenClaw Desktop</span>
             </a>
             <div className="nav-links">

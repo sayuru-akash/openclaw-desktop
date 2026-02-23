@@ -155,7 +155,7 @@ body {
 /* ── Hero scene (sky background wrapper) ───────────── */
 .hero-scene {
   position: relative;
-  background: url("/sky_bg.jpeg") center top / cover no-repeat;
+  background: url("../../assets/branding/sky_bg.jpeg") center top / cover no-repeat;
   padding-top: 80px; /* fixed nav height (~56px) + 24px breathing room */
   padding-bottom: 80px;
 }
