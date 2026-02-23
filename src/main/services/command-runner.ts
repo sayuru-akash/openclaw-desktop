@@ -5,11 +5,22 @@ interface RunCommandOptions {
   okExitCodes?: number[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
+  killSignal?: NodeJS.Signals | number;
 }
+
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export function runCommand(file: string, args: string[] = [], options: RunCommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve) => {
-    execFile(file, args, { encoding: "utf8", cwd: options.cwd, env: options.env }, (error, stdout, stderr) => {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    execFile(file, args, {
+      encoding: "utf8",
+      cwd: options.cwd,
+      env: options.env,
+      timeout: timeoutMs,
+      killSignal: options.killSignal ?? "SIGTERM"
+    }, (error, stdout, stderr) => {
       const normalizedStdout = stdout ?? "";
       const normalizedStderr = stderr ?? "";
       const okExitCodes = new Set([0, ...(options.okExitCodes ?? [])]);
@@ -32,7 +43,9 @@ export function runCommand(file: string, args: string[] = [], options: RunComman
           ok: false,
           code,
           stdout: normalizedStdout,
-          stderr: normalizedStderr || error.message
+          stderr: normalizedStderr || (error.killed
+            ? `Command timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+            : error.message)
         });
         return;
       }
@@ -54,6 +67,8 @@ export function runCommandStreaming(
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const okExitCodes = new Set([0, ...(options.okExitCodes ?? [])]);
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const killSignal = options.killSignal ?? "SIGTERM";
     const child = spawn(file, args, {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: options.cwd,
@@ -63,6 +78,12 @@ export function runCommandStreaming(
     let stdout = "";
     let stderr = "";
     let resolved = false;
+    let timedOut = false;
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill(killSignal);
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
@@ -82,6 +103,7 @@ export function runCommandStreaming(
       }
 
       resolved = true;
+      clearTimeout(timeout);
       resolve({
         ok: false,
         code: null,
@@ -96,13 +118,16 @@ export function runCommandStreaming(
       }
 
       resolved = true;
+      clearTimeout(timeout);
       const normalizedCode = typeof code === "number" ? code : null;
-      const ok = normalizedCode !== null ? okExitCodes.has(normalizedCode) : false;
+      const ok = !timedOut && normalizedCode !== null ? okExitCodes.has(normalizedCode) : false;
       resolve({
         ok,
         code: normalizedCode,
         stdout,
-        stderr
+        stderr: timedOut
+          ? `${stderr}\nCommand timed out after ${Math.round(timeoutMs / 1000)} seconds.`.trim()
+          : stderr
       });
     });
   });

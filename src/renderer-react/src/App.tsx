@@ -1408,7 +1408,7 @@ export function App() {
           </div>
         </div>
 
-        <div className={`grid min-h-0 flex-1 ${isWelcomeStep ? "grid-cols-[minmax(0,1fr)_520px]" : "grid-cols-[minmax(0,1fr)_380px]"} max-[1100px]:grid-cols-1`}>
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] max-[1100px]:grid-cols-1">
           <section className="flex min-h-0 flex-col p-8">
             <div className="mb-6">
               {canGoBackOnboarding ? (
@@ -1437,9 +1437,6 @@ export function App() {
                     <div className="flex flex-wrap gap-2">
                       <Button onClick={() => void completeAuthHandoff()} disabled={isBusy}>
                         Sign In
-                      </Button>
-                      <Button variant="outline" onClick={() => void verifyAuthSession()} disabled={isBusy}>
-                        Check Session
                       </Button>
                     </div>
                   </CardContent>
@@ -1528,48 +1525,9 @@ export function App() {
           </section>
 
           <aside className="border-l bg-muted/20 p-6 max-[1100px]:border-l-0 max-[1100px]:border-t">
-            {isWelcomeStep ? (
-              <div className="flex h-full items-center justify-center rounded-lg border bg-card/80 p-10">
-                <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-full max-w-[360px]" />
-              </div>
-            ) : (
-              <>
-                {renderStatusTable([
-                  {
-                    label: "Runtime",
-                    value: readinessText(runtimeReady, "Ready", "Missing"),
-                    variant: toVariant(runtimeReady)
-                  },
-                  {
-                    label: "OpenClaw",
-                    value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.openClawInstalled : null)
-                  },
-                  {
-                    label: "Gateway",
-                    value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
-                    variant: toVariant(environment ? environment.gatewayRunning : null)
-                  },
-                  {
-                    label: "Account",
-                    value: configDraft?.accountAuthorized ? "Signed in" : "Pending",
-                    variant: configDraft?.accountAuthorized ? "success" : "warning"
-                  },
-                  {
-                    label: "Model",
-                    value: modelConfigured ? "Ready" : "Pending",
-                    variant: modelConfigured ? "success" : "warning"
-                  }
-                ])}
-
-                <details className="mt-4 rounded-md border bg-card">
-                  <summary className="cursor-pointer px-4 py-2 text-sm text-muted-foreground">Details</summary>
-                  <pre className="max-h-64 overflow-auto border-t px-4 py-3 text-xs text-muted-foreground">
-                    {logs.slice(0, 120).join("\n")}
-                  </pre>
-                </details>
-              </>
-            )}
+            <div className="flex h-full items-center justify-center rounded-lg border bg-card/80 p-10">
+              <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-full max-w-[360px]" />
+            </div>
           </aside>
         </div>
       </div>

@@ -18,7 +18,6 @@ export default function RootLayout({
       <html lang="en">
         <body>
           <main>
-            <div className="brand-header">OpenClaw</div>
             {children}
           </main>
         </body>

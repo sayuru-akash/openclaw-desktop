@@ -24,7 +24,13 @@ import {
 } from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
-const NODE_INSTALL_OK_EXIT_CODES = [3010];
+const NODE_REBOOT_EXIT_CODES = [3010, 1641];
+const NODE_INSTALL_OK_EXIT_CODES = [...NODE_REBOOT_EXIT_CODES];
+const NODE_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+const OPENCLAW_INSTALL_TIMEOUT_MS = 20 * 60 * 1000;
+const DISK_CHECK_TIMEOUT_MS = 20 * 1000;
+const NODE_MIN_FREE_BYTES = 512 * 1024 * 1024;
+const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 
 export class EnvironmentService {
   private resolvedOpenClawCommand = "";
@@ -330,12 +336,12 @@ export class EnvironmentService {
   }
 
   public rebootRequired(result: CommandResult): boolean {
-    if (result.code === 3010) {
+    if (result.code !== null && NODE_REBOOT_EXIT_CODES.includes(result.code)) {
       return true;
     }
 
     const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
-    return /reboot|restart/.test(output);
+    return /(reboot|restart|reiniciar|red[eé]marr|neu\s*start|riavvia|перезагруз|再起動|重启)/i.test(output);
   }
 
   private async installNodeRuntimeInternal(
@@ -362,6 +368,15 @@ export class EnvironmentService {
 
     onLog?.("Installing Node.js LTS runtime on Windows...", "stdout");
 
+    const nodeDiskCheck = await this.ensureMinimumFreeSpace(
+      process.env.SystemDrive ? `${process.env.SystemDrive}\\` : "C:\\",
+      NODE_MIN_FREE_BYTES,
+      onLog
+    );
+    if (nodeDiskCheck) {
+      return nodeDiskCheck;
+    }
+
     const wingetResult = await this.installNodeWithWinget(onLog);
     if (wingetResult.ok) {
       return this.verifyNodeRuntimeInstalled(wingetResult, onLog);
@@ -370,6 +385,10 @@ export class EnvironmentService {
     onLog?.("winget install failed or unavailable. Falling back to MSI installer...", "stderr");
 
     const msiResult = await this.installNodeWithMsiFallback(onLog);
+    if (!msiResult.ok) {
+      return this.composeNodeInstallFailure(wingetResult, msiResult);
+    }
+
     return this.verifyNodeRuntimeInstalled(msiResult, onLog);
   }
 
@@ -396,7 +415,22 @@ export class EnvironmentService {
     }
 
     const prefix = this.getManagedNpmPrefix();
-    await mkdir(prefix, { recursive: true });
+    const diskCheck = await this.ensureMinimumFreeSpace(prefix, OPENCLAW_MIN_FREE_BYTES, onLog);
+    if (diskCheck) {
+      return diskCheck;
+    }
+
+    try {
+      await mkdir(prefix, { recursive: true });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: `Cannot prepare install directory at ${prefix}: ${detail}`
+      };
+    }
 
     const npmFile = this.resolveNpmCommand();
     const npmArgs = ["install", "-g", "openclaw", "--prefix", prefix, "--no-fund", "--no-audit"];
@@ -404,14 +438,22 @@ export class EnvironmentService {
 
     const result = onLog
       ? await runCommandStreaming(npmFile, npmArgs, {
+        timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
         onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
       })
-      : await runCommand(npmFile, npmArgs, { env: this.buildCommandEnv() });
+      : await runCommand(npmFile, npmArgs, {
+        timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
+        env: this.buildCommandEnv()
+      });
 
     if (!result.ok) {
-      return result;
+      const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+      return {
+        ...result,
+        stderr: `${detail}\nOpenClaw npm install failed. Check internet, npm registry access, disk space, and permissions.`.trim()
+      };
     }
 
     const openclawInstalled = await this.isOpenClawAvailable(true);
@@ -420,7 +462,7 @@ export class EnvironmentService {
         ok: false,
         code: result.code,
         stdout: result.stdout,
-        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected.`.trim()
+        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected at ${this.getManagedOpenClawPath()}. Restart Windows (PATH refresh) and retry.`.trim()
       };
     }
 
@@ -443,6 +485,7 @@ export class EnvironmentService {
     if (!onLog) {
       return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
         okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv()
       });
     }
@@ -452,6 +495,7 @@ export class EnvironmentService {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
       {
         okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
         onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
@@ -484,6 +528,7 @@ export class EnvironmentService {
     if (!onLog) {
       return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
         okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv()
       });
     }
@@ -493,6 +538,7 @@ export class EnvironmentService {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
       {
         okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
+        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
         onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
@@ -514,11 +560,21 @@ export class EnvironmentService {
       return installResult;
     }
 
+    const detectedInInstallPath = await this.isNodeInstalledInWellKnownPaths();
+    if (detectedInInstallPath) {
+      return {
+        ok: false,
+        code: installResult.code ?? 3010,
+        stdout: installResult.stdout,
+        stderr: `${installResult.stderr}\nNode.js appears installed, but PATH is not refreshed yet. Restart Windows and run guided setup again.`.trim()
+      };
+    }
+
     return {
       ok: false,
       code: installResult.code,
       stdout: installResult.stdout,
-      stderr: `${installResult.stderr}\nNode.js install completed but node/npm are still unavailable. Restart Windows and retry.`.trim()
+      stderr: `${installResult.stderr}\nNode.js install completed but node/npm are still unavailable. Restart Windows and retry. If it still fails, install Node.js LTS manually from nodejs.org and rerun setup.`.trim()
     };
   }
 
@@ -672,6 +728,136 @@ export class EnvironmentService {
 
   private resolveNpmCommand(): string {
     return process.platform === "win32" ? "npm.cmd" : "npm";
+  }
+
+  private async ensureMinimumFreeSpace(
+    targetPath: string,
+    minimumBytes: number,
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult | null> {
+    const freeBytes = await this.getAvailableFreeBytes(targetPath);
+    if (freeBytes === null) {
+      onLog?.("Disk space pre-check unavailable. Continuing installation.", "stderr");
+      return null;
+    }
+
+    const driveRoot = path.parse(targetPath).root || targetPath;
+    if (freeBytes < minimumBytes) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: `Insufficient disk space on ${driveRoot}. Required ${this.formatBytes(minimumBytes)}, available ${this.formatBytes(freeBytes)}.`
+      };
+    }
+
+    onLog?.(`Disk space check passed on ${driveRoot}: ${this.formatBytes(freeBytes)} free.`, "stdout");
+    return null;
+  }
+
+  private async getAvailableFreeBytes(targetPath: string): Promise<number | null> {
+    if (process.platform !== "win32") {
+      return null;
+    }
+
+    const root = path.parse(targetPath).root || "C:\\";
+    const normalizedRoot = root.endsWith("\\") ? root : `${root}\\`;
+    const quotedRoot = this.quoteForSingleQuotedPowerShell(normalizedRoot);
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      `$root = [System.IO.Path]::GetPathRoot(${quotedRoot})`,
+      "$drive = New-Object System.IO.DriveInfo($root)",
+      "Write-Output $drive.AvailableFreeSpace"
+    ].join("; ");
+    const result = await runCommand(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { timeoutMs: DISK_CHECK_TIMEOUT_MS, env: this.buildCommandEnv() }
+    );
+
+    if (!result.ok) {
+      return null;
+    }
+
+    const parsed = Number(result.stdout.trim().split(/\r?\n/).at(-1));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  private formatBytes(bytes: number): string {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = bytes;
+    let unit = units[0];
+    for (let index = 1; index < units.length && value >= 1024; index += 1) {
+      value /= 1024;
+      unit = units[index];
+    }
+    return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+  }
+
+  private composeNodeInstallFailure(wingetResult: CommandResult, msiResult: CommandResult): CommandResult {
+    const wingetDetail = [wingetResult.stderr, wingetResult.stdout].filter(Boolean).join("\n").trim() || "No output.";
+    const msiDetail = [msiResult.stderr, msiResult.stdout].filter(Boolean).join("\n").trim() || "No output.";
+    const hint = this.detectInstallFailureHint(`${wingetDetail}\n${msiDetail}`);
+    return {
+      ok: false,
+      code: msiResult.code ?? wingetResult.code,
+      stdout: [wingetResult.stdout, msiResult.stdout].filter(Boolean).join("\n"),
+      stderr: [
+        "Node.js installation failed with both methods.",
+        `winget attempt:\n${wingetDetail}`,
+        `MSI fallback:\n${msiDetail}`,
+        hint
+      ].filter(Boolean).join("\n\n")
+    };
+  }
+
+  private detectInstallFailureHint(output: string): string {
+    const blob = output.toLowerCase();
+    if (/cancel|1602|1223/.test(blob)) {
+      return "Install was cancelled. Accept the UAC prompt and retry.";
+    }
+    if (/winget\.exe not found|not recognized/.test(blob)) {
+      return "winget is unavailable. Keep MSI fallback enabled or install App Installer from Microsoft Store.";
+    }
+    if (/timed out|timeout/.test(blob)) {
+      return "Installer timed out. Check network speed and retry.";
+    }
+    if (/network|unable to connect|name resolution|download|tls|certificate/.test(blob)) {
+      return "Network issue detected. Verify internet access and retry.";
+    }
+    if (/access is denied|permission|policy|blocked|administrator/.test(blob)) {
+      return "Permissions/policy blocked installation. Run as Administrator or contact IT admin.";
+    }
+    return "Retry guided setup. If it keeps failing, install Node.js LTS manually and rerun setup.";
+  }
+
+  private async isNodeInstalledInWellKnownPaths(): Promise<boolean> {
+    if (process.platform !== "win32") {
+      return false;
+    }
+
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const candidates = [
+      path.join(programFiles, "nodejs"),
+      path.join(programFilesX86, "nodejs"),
+      path.join(localAppData, "Programs", "nodejs")
+    ];
+
+    for (const basePath of candidates) {
+      const nodeExists = await this.fileExists(path.join(basePath, "node.exe"));
+      const npmExists = await this.fileExists(path.join(basePath, "npm.cmd"));
+      if (nodeExists && npmExists) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private quoteForSingleQuotedPowerShell(value: string): string {

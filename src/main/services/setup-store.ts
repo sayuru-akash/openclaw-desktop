@@ -84,8 +84,13 @@ export class SetupStore {
       updatedAt: new Date().toISOString()
     };
 
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(merged, null, 2), "utf8");
+    try {
+      await mkdir(path.dirname(this.filePath), { recursive: true });
+      await writeFile(this.filePath, JSON.stringify(merged, null, 2), "utf8");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[setup-store] Failed to persist setup state: ${detail}`);
+    }
 
     return merged;
   }

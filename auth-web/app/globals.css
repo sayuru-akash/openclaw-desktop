@@ -37,6 +37,12 @@ main {
   align-items: center;
 }
 
+.auth-logo {
+  width: 220px;
+  height: auto;
+  margin-bottom: 1.5rem;
+}
+
 .home-card {
   text-align: center;
   max-width: 400px;
