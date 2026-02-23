@@ -1,0 +1,53 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  background: #0f1115;
+  color: #f4f6fb;
+}
+
+main {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.shell {
+  width: min(880px, 100%);
+  border: 1px solid #272b36;
+  border-radius: 14px;
+  background: #141923;
+  padding: 1.25rem;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #272b36;
+}
+
+.brand {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.auth-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.content {
+  padding-top: 1.25rem;
+  color: #c3cada;
+}

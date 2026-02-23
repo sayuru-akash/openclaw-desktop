@@ -47,10 +47,10 @@ function resolveRendererFile(): string {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1160,
-    height: 780,
-    minWidth: 960,
-    minHeight: 680,
+    width: 1280,
+    height: 820,
+    minWidth: 1024,
+    minHeight: 700,
     show: false,
     title: "OpenClaw Desktop",
     backgroundColor: "#181818",
@@ -67,6 +67,11 @@ function createWindow(): void {
   mainWindow.once("ready-to-show", () => {
     flushPendingSetupEvents();
     flushPendingUpdateEvents();
+
+    if (process.platform === "win32" && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMaximized()) {
+      mainWindow.maximize();
+    }
+
     mainWindow?.show();
   });
 

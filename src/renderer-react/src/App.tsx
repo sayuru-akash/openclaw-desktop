@@ -7,15 +7,16 @@ import {
   type ComponentType
 } from "react";
 import {
-  Activity,
   ArrowUpCircle,
   Bot,
   Boxes,
   Cable,
+  ChevronRight,
   FileText,
   Folder,
   MessageSquare,
   Moon,
+  PanelLeft,
   Play,
   RefreshCw,
   Settings,
@@ -93,6 +94,24 @@ interface StatusTableRow {
   variant: "default" | "success" | "warning" | "danger";
 }
 
+type OnboardingStepId = "welcome" | "runtime" | "openclaw" | "gateway" | "model" | "done";
+
+interface OnboardingStep {
+  id: OnboardingStepId;
+  label: string;
+  title: string;
+  subtitle: string;
+}
+
+const onboardingSteps: OnboardingStep[] = [
+  { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Set up OpenClaw in a few steps." },
+  { id: "runtime", label: "Runtime", title: "Node Runtime", subtitle: "Install Node.js and npm." },
+  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI." },
+  { id: "gateway", label: "Gateway", title: "Start Gateway", subtitle: "Start local gateway." },
+  { id: "model", label: "Model", title: "Pick Model", subtitle: "Choose provider and model." },
+  { id: "done", label: "Done", title: "Finish", subtitle: "Complete onboarding and open the app." }
+];
+
 const navItems: NavItem[] = [
   { key: "onboarding", label: "Onboarding", icon: Sparkles },
   { key: "channels", label: "Channels", icon: Cable },
@@ -160,6 +179,7 @@ export function App() {
   const [channelStatus, setChannelStatus] = useState<ChannelStatusResult | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatusResult | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatusEvent | null>(null);
+  const [wizardStepIndex, setWizardStepIndex] = useState(0);
   const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFilePayload | null>(null);
   const [selectedFile, setSelectedFile] = useState<WorkspaceEditableFileName>("openclaw.json");
   const [workspaceFileEditor, setWorkspaceFileEditor] = useState("");
@@ -170,6 +190,7 @@ export function App() {
   const [error, setError] = useState("");
   const [logs, setLogs] = useState<string[]>(["App ready."]);
   const [theme, setTheme] = useState<ThemeMode>("light");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatStatusText, setChatStatusText] = useState("Waiting for gateway readiness check...");
   const [chatFallbackVisible, setChatFallbackVisible] = useState(false);
   const [controlStatusText, setControlStatusText] = useState("Waiting for gateway readiness check...");
@@ -194,6 +215,12 @@ export function App() {
 
     return environment.isWindows && environment.openClawInstalled && environment.gatewayRunning;
   }, [environment]);
+
+  const modelConfigured = useMemo(() => {
+    const configuredProvider = configDraft?.modelProvider || modelStatus?.provider || "";
+    const configuredModel = configDraft?.modelName || modelStatus?.model || "";
+    return Boolean(configuredProvider && configuredModel);
+  }, [configDraft?.modelName, configDraft?.modelProvider, modelStatus?.model, modelStatus?.provider]);
 
   const isBusy = Boolean(busyAction);
   const onboardingLocked = Boolean(configDraft && !configDraft.onboardingCompleted);
@@ -231,7 +258,7 @@ export function App() {
   const runAction = useCallback(async (
     label: string,
     fn: () => Promise<void>
-  ) => {
+  ): Promise<boolean> => {
     setBusyAction(label);
     setError("");
     appendLog(`${label}...`);
@@ -239,10 +266,12 @@ export function App() {
     try {
       await fn();
       appendLog(`${label}: done.`);
+      return true;
     } catch (err) {
       const message = formatError(err);
       setError(message);
       appendLog(`${label}: failed - ${message}`);
+      return false;
     } finally {
       setBusyAction("");
     }
@@ -366,12 +395,6 @@ export function App() {
   const settingsProvider = configDraft?.modelProvider ?? "";
   const settingsModelOptions = settingsProvider ? modelStatus?.modelsByProvider?.[settingsProvider] ?? [] : [];
 
-  const runGuidedSetup = () => runAction("Guided setup", async () => {
-    const setup = await window.openclaw.runGuidedSetup();
-    setSetupState(setup);
-    await refreshAll();
-  });
-
   const installNode = () => runAction("Node install", async () => {
     const result = await window.openclaw.installNodeRuntime();
     summarizeCommandResult("Node install", result, appendLog);
@@ -400,12 +423,6 @@ export function App() {
     const result = await window.openclaw.gatewayStop();
     summarizeCommandResult("Gateway stop", result, appendLog);
     await refreshAll();
-  });
-
-  const checkGatewayStatus = () => runAction("Gateway status", async () => {
-    const result = await window.openclaw.gatewayStatus();
-    summarizeCommandResult("Gateway status", result, appendLog);
-    await refreshEnvironmentSetup();
   });
 
   const completeOnboarding = () => runAction("Complete onboarding", async () => {
@@ -763,10 +780,6 @@ export function App() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Button variant="primary" onClick={runGuidedSetup} disabled={isBusy}>
-              <Sparkles className="h-3.5 w-3.5" />
-              Guided Setup
-            </Button>
             <Button onClick={installNode} disabled={isBusy || !environment?.isWindows}>
               <Wrench className="h-3.5 w-3.5" />
               Install Node
@@ -1133,6 +1146,332 @@ export function App() {
     );
   };
 
+  const currentOnboardingStep = onboardingSteps[wizardStepIndex] ?? onboardingSteps[0];
+  const canGoBackOnboarding = wizardStepIndex > 0;
+
+  const onboardingStepDone = (stepId: OnboardingStepId) => {
+    switch (stepId) {
+      case "welcome":
+        return wizardStepIndex > 0;
+      case "runtime":
+        return runtimeReady === true;
+      case "openclaw":
+        return Boolean(environment?.openClawInstalled);
+      case "gateway":
+        return Boolean(environment?.gatewayRunning);
+      case "model":
+        return modelConfigured;
+      case "done":
+        return Boolean(configDraft?.onboardingCompleted);
+      default:
+        return false;
+    }
+  };
+
+  const advanceOnboarding = () => {
+    setWizardStepIndex((current) => Math.min(current + 1, onboardingSteps.length - 1));
+  };
+
+  const retreatOnboarding = () => {
+    setWizardStepIndex((current) => Math.max(current - 1, 0));
+  };
+
+  const runOnboardingStepPrimary = async () => {
+    const step = currentOnboardingStep.id;
+
+    if (step === "welcome") {
+      advanceOnboarding();
+      return;
+    }
+
+    if (step === "runtime") {
+      if (runtimeReady) {
+        advanceOnboarding();
+        return;
+      }
+      const ok = await installNode();
+      if (!ok) {
+        return;
+      }
+      const env = await refreshEnvironmentSetup();
+      if (env.nodeInstalled && env.npmInstalled) {
+        advanceOnboarding();
+      }
+      return;
+    }
+
+    if (step === "openclaw") {
+      if (environment?.openClawInstalled) {
+        advanceOnboarding();
+        return;
+      }
+      const ok = await installOpenClaw();
+      if (!ok) {
+        return;
+      }
+      const env = await refreshEnvironmentSetup();
+      if (env.openClawInstalled) {
+        advanceOnboarding();
+      }
+      return;
+    }
+
+    if (step === "gateway") {
+      if (environment?.gatewayRunning) {
+        advanceOnboarding();
+        return;
+      }
+      const ok = await startGateway();
+      if (!ok) {
+        return;
+      }
+      const env = await refreshEnvironmentSetup();
+      if (env.gatewayRunning) {
+        advanceOnboarding();
+      }
+      return;
+    }
+
+    if (step === "model") {
+      if (modelConfigured) {
+        advanceOnboarding();
+        return;
+      }
+      if (!manageProvider || !manageModel) {
+        setError("Select provider and model.");
+        return;
+      }
+      const ok = await applyModelSelection();
+      if (!ok) {
+        return;
+      }
+      const status = await refreshModels();
+      if (status.provider && status.model) {
+        advanceOnboarding();
+      }
+      return;
+    }
+
+    if (step === "done") {
+      const ok = await completeOnboarding();
+      if (!ok) {
+        return;
+      }
+      const config = await refreshConfig();
+      if (config.onboardingCompleted) {
+        setWizardStepIndex(0);
+        setWorkspace("chat");
+      }
+    }
+  };
+
+  const onboardingPrimaryLabel = (() => {
+    switch (currentOnboardingStep.id) {
+      case "welcome":
+        return "Start";
+      case "runtime":
+        return runtimeReady ? "Continue" : "Install Node";
+      case "openclaw":
+        return environment?.openClawInstalled ? "Continue" : "Install OpenClaw";
+      case "gateway":
+        return environment?.gatewayRunning ? "Continue" : "Start Gateway";
+      case "model":
+        return modelConfigured ? "Continue" : "Apply Model";
+      case "done":
+        return "Enter App";
+      default:
+        return "Continue";
+    }
+  })();
+
+  const isWelcomeStep = currentOnboardingStep.id === "welcome";
+  const brandLogoSrc = theme === "light" ? "./openclaw_logo_light_theme.png" : "./openclaw_logo.png";
+
+  const renderOnboardingWizard = () => (
+    <div className="h-full w-full bg-background p-4">
+      <div className="mx-auto flex h-full max-w-[1320px] flex-col rounded-lg border bg-card">
+        <div className="border-b px-6 py-4">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-2xl font-bold tracking-tight">Onboarding</p>
+            <p className="text-xs text-muted-foreground">
+              Step {wizardStepIndex + 1} of {onboardingSteps.length}
+            </p>
+          </div>
+          <div className="flex items-center flex-wrap gap-y-2">
+            {onboardingSteps.map((step, index) => (
+              <div key={step.id} className="flex items-center">
+                <div className="flex flex-col">
+                  <span className={`text-xs font-medium ${index === wizardStepIndex ? "text-foreground" : "text-muted-foreground"}`}>
+                    {step.label}
+                  </span>
+                  <div className={`mt-1 h-0.5 rounded-full ${index <= wizardStepIndex ? "bg-foreground" : "bg-muted"}`} />
+                </div>
+                {index < onboardingSteps.length - 1 && (
+                  <ChevronRight className="mx-3 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={`grid min-h-0 flex-1 ${isWelcomeStep ? "grid-cols-[minmax(0,1fr)_520px]" : "grid-cols-[minmax(0,1fr)_380px]"} max-[1100px]:grid-cols-1`}>
+          <section className="flex min-h-0 flex-col p-8">
+            <div className="mb-6">
+              {canGoBackOnboarding ? (
+                <Button variant="ghost" className="mb-4 px-0 text-sm" onClick={retreatOnboarding}>
+                  Back
+                </Button>
+              ) : null}
+              <h2 className="text-4xl font-semibold tracking-tight">{currentOnboardingStep.title}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{currentOnboardingStep.subtitle}</p>
+            </div>
+
+            <div className="flex-1 space-y-4">
+              {currentOnboardingStep.id === "welcome" ? (
+                <Card>
+                  <CardContent className="pt-5 text-sm text-muted-foreground">
+                    Setup installs runtime, OpenClaw, gateway, and model.
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {currentOnboardingStep.id === "runtime" ? (
+                renderStatusTable([
+                  {
+                    label: "Node.js",
+                    value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.nodeInstalled : null)
+                  },
+                  {
+                    label: "npm",
+                    value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.npmInstalled : null)
+                  }
+                ])
+              ) : null}
+
+              {currentOnboardingStep.id === "openclaw" ? (
+                renderStatusTable([
+                  {
+                    label: "OpenClaw CLI",
+                    value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.openClawInstalled : null)
+                  }
+                ])
+              ) : null}
+
+              {currentOnboardingStep.id === "gateway" ? (
+                renderStatusTable([
+                  {
+                    label: "Gateway",
+                    value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
+                    variant: toVariant(environment ? environment.gatewayRunning : null)
+                  }
+                ])
+              ) : null}
+
+              {currentOnboardingStep.id === "model" ? (
+                <Card>
+                  <CardContent className="space-y-3 pt-5">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Provider</p>
+                      <Select value={manageProvider} onChange={(event) => applyManagedModelProvider(event.target.value)}>
+                        <option value="">Select provider</option>
+                        {modelProviders.map((provider) => (
+                          <option key={provider} value={provider}>{provider}</option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Model</p>
+                      <Select value={manageModel} onChange={(event) => setManageModel(event.target.value)}>
+                        <option value="">Select model</option>
+                        {modelOptions.map((model) => (
+                          <option key={model} value={model}>{model}</option>
+                        ))}
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {currentOnboardingStep.id === "done" ? (
+                <Card>
+                  <CardContent className="pt-5 text-sm text-muted-foreground">
+                    {onboardingStepDone("model") ? "Everything is ready." : "Complete previous steps first."}
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+
+            <div className="mt-6">
+              <Button
+                variant="primary"
+                className="h-12 px-8 text-base font-semibold"
+                onClick={() => void runOnboardingStepPrimary()}
+                disabled={isBusy || (currentOnboardingStep.id === "done" && !onboardingStepDone("model"))}
+              >
+                {onboardingPrimaryLabel}
+              </Button>
+            </div>
+          </section>
+
+          <aside className="border-l bg-muted/20 p-6 max-[1100px]:border-l-0 max-[1100px]:border-t">
+            {isWelcomeStep ? (
+              <div className="flex h-full items-center justify-center rounded-lg border bg-card/80 p-10">
+                <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-full max-w-[360px]" />
+              </div>
+            ) : (
+              <>
+                {renderStatusTable([
+                  {
+                    label: "Runtime",
+                    value: readinessText(runtimeReady, "Ready", "Missing"),
+                    variant: toVariant(runtimeReady)
+                  },
+                  {
+                    label: "OpenClaw",
+                    value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.openClawInstalled : null)
+                  },
+                  {
+                    label: "Gateway",
+                    value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
+                    variant: toVariant(environment ? environment.gatewayRunning : null)
+                  },
+                  {
+                    label: "Model",
+                    value: modelConfigured ? "Ready" : "Pending",
+                    variant: modelConfigured ? "success" : "warning"
+                  }
+                ])}
+
+                <details className="mt-4 rounded-md border bg-card">
+                  <summary className="cursor-pointer px-4 py-2 text-sm text-muted-foreground">Details</summary>
+                  <pre className="max-h-64 overflow-auto border-t px-4 py-3 text-xs text-muted-foreground">
+                    {logs.slice(0, 120).join("\n")}
+                  </pre>
+                </details>
+              </>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!configDraft) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!configDraft.onboardingCompleted) {
+    return renderOnboardingWizard();
+  }
+
   const workspaceTitle = workspace === "setup" ? "Setup" : workspace === "chat" ? "Chat" : "Control";
   const workspaceDescription = workspace === "setup"
     ? "Install and control"
@@ -1141,37 +1480,46 @@ export function App() {
       : "Gateway control";
 
   return (
-    <Tabs value={workspace} onValueChange={(value) => openWorkspace(value as Workspace)} className="h-full w-full bg-background p-3">
-      <div className="grid h-full grid-cols-[290px_minmax(0,1fr)_320px] gap-3 max-[1360px]:grid-cols-1">
+    <Tabs value={workspace} onValueChange={(value) => openWorkspace(value as Workspace)} className="h-full w-full bg-sidebar p-3">
+      <div className={`grid h-full gap-3 max-[1360px]:grid-cols-1 ${sidebarCollapsed ? "grid-cols-[56px_minmax(0,1fr)_320px]" : "grid-cols-[290px_minmax(0,1fr)_320px]"}`}>
         <Sidebar>
           <SidebarHeader>
-            <img src="./openclaw_logo.png" alt="OpenClaw" className="h-auto w-36" />
-            <h1 className="text-[42px] font-semibold tracking-tight leading-none">Control Center</h1>
+            <div className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
+              {!sidebarCollapsed && <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-36" />}
+              <Button
+                variant="ghost"
+                className="flex-shrink-0 px-2"
+                onClick={() => setSidebarCollapsed((c) => !c)}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            </div>
           </SidebarHeader>
 
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+              {!sidebarCollapsed && <SidebarGroupLabel>Workspace</SidebarGroupLabel>}
               <SidebarGroupContent>
                 <TabsList className="grid h-auto grid-cols-1 gap-1 bg-transparent p-0">
-                  <TabsTrigger value="setup" className="justify-start gap-2">
-                    <Wrench className="h-4 w-4" />
-                    Setup
+                  <TabsTrigger value="setup" className={`gap-2 ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}`} title={sidebarCollapsed ? "Setup" : undefined}>
+                    <Wrench className="h-5 w-5 flex-shrink-0" />
+                    {!sidebarCollapsed && "Setup"}
                   </TabsTrigger>
-                  <TabsTrigger value="chat" className="justify-start gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    Chat
+                  <TabsTrigger value="chat" className={`gap-2 ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}`} title={sidebarCollapsed ? "Chat" : undefined}>
+                    <MessageSquare className="h-5 w-5 flex-shrink-0" />
+                    {!sidebarCollapsed && "Chat"}
                   </TabsTrigger>
-                  <TabsTrigger value="control" className="justify-start gap-2">
-                    <Boxes className="h-4 w-4" />
-                    Control
+                  <TabsTrigger value="control" className={`gap-2 ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}`} title={sidebarCollapsed ? "Control" : undefined}>
+                    <Boxes className="h-5 w-5 flex-shrink-0" />
+                    {!sidebarCollapsed && "Control"}
                   </TabsTrigger>
                 </TabsList>
               </SidebarGroupContent>
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Sections</SidebarGroupLabel>
+              {!sidebarCollapsed && <SidebarGroupLabel>Sections</SidebarGroupLabel>}
               <SidebarGroupContent>
                 {navItems.map((item) => {
                   const Icon = item.icon;
@@ -1180,11 +1528,12 @@ export function App() {
                     <Button
                       key={item.key}
                       variant={active ? "primary" : "ghost"}
-                      className="w-full justify-start"
+                      className={`w-full ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}`}
                       onClick={() => openFeaturePane(item.key)}
+                      title={sidebarCollapsed ? item.label : undefined}
                     >
-                      <Icon className="h-4 w-4" />
-                      {item.label}
+                      <Icon className="h-5 w-5 flex-shrink-0" />
+                      {!sidebarCollapsed && item.label}
                     </Button>
                   );
                 })}
@@ -1192,25 +1541,6 @@ export function App() {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter>
-            {renderStatusTable([
-              {
-                label: "Node/npm",
-                value: readinessText(runtimeReady, "Ready", "Missing"),
-                variant: toVariant(runtimeReady)
-              },
-              {
-                label: "OpenClaw",
-                value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
-                variant: toVariant(environment ? environment.openClawInstalled : null)
-              },
-              {
-                label: "Gateway",
-                value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
-                variant: toVariant(environment ? environment.gatewayRunning : null)
-              }
-            ], true)}
-          </SidebarFooter>
         </Sidebar>
 
         <SidebarInset className="overflow-hidden p-5">
@@ -1261,18 +1591,6 @@ export function App() {
 
           <SidebarContent className="px-3">
             <div className="grid grid-cols-1 gap-2">
-              <Button variant="primary" onClick={runGuidedSetup} disabled={isBusy}>
-                <Sparkles className="h-4 w-4" />
-                Guided Setup
-              </Button>
-              <Button onClick={installNode} disabled={isBusy || !environment?.isWindows}>
-                <Wrench className="h-4 w-4" />
-                Install Node
-              </Button>
-              <Button onClick={installOpenClaw} disabled={isBusy || runtimeReady !== true}>
-                <Bot className="h-4 w-4" />
-                Install OpenClaw
-              </Button>
               <Button onClick={startGateway} disabled={isBusy || !environment?.openClawInstalled}>
                 <Play className="h-4 w-4" />
                 Start Gateway
@@ -1280,10 +1598,6 @@ export function App() {
               <Button onClick={stopGateway} disabled={isBusy || !environment?.openClawInstalled}>
                 <Square className="h-4 w-4" />
                 Stop Gateway
-              </Button>
-              <Button variant="outline" onClick={checkGatewayStatus} disabled={isBusy || !environment?.openClawInstalled}>
-                <Activity className="h-4 w-4" />
-                Gateway Status
               </Button>
             </div>
 
