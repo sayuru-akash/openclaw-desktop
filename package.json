@@ -29,7 +29,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "openclaw_logo256.ico",
+      "icon": "assets/branding/openclaw_logo256.ico",
       "target": [
         {
           "target": "nsis",
@@ -40,8 +40,8 @@
       ]
     },
     "nsis": {
-      "installerIcon": "openclaw_logo256.ico",
-      "uninstallerIcon": "openclaw_logo256.ico"
+      "installerIcon": "assets/branding/openclaw_logo256.ico",
+      "uninstallerIcon": "assets/branding/openclaw_logo256.ico"
     }
   },
   "devDependencies": {
