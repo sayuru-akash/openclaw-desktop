@@ -29,3 +29,6 @@ npm run dev
 - `/sign-in` Clerk sign-in
 - `/sign-up` Clerk sign-up
 - `/api/auth/session` session status JSON
+- `/desktop/start` desktop handoff entrypoint (sign-in aware)
+- `/desktop/complete` creates a short-lived handoff token and redirects to desktop callback URL
+- `/api/auth/desktop/exchange` exchanges handoff token for `{ authenticated, userId }`

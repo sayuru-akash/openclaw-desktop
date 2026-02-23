@@ -8,6 +8,9 @@ const defaultConfig: AppConfig = {
   modelProvider: "",
   modelName: "",
   modelApiKey: "",
+  authWebBaseUrl: "https://auth.openclawdesk.top",
+  accountAuthorized: false,
+  accountUserId: "",
   autoStartGateway: true,
   onboardingCompleted: false,
   updatedAt: new Date(0).toISOString()
@@ -30,6 +33,9 @@ export class ConfigStore {
         modelProvider: parsed.modelProvider ?? defaultConfig.modelProvider,
         modelName: parsed.modelName ?? defaultConfig.modelName,
         modelApiKey: parsed.modelApiKey ?? defaultConfig.modelApiKey,
+        authWebBaseUrl: parsed.authWebBaseUrl ?? defaultConfig.authWebBaseUrl,
+        accountAuthorized: parsed.accountAuthorized ?? defaultConfig.accountAuthorized,
+        accountUserId: parsed.accountUserId ?? defaultConfig.accountUserId,
         autoStartGateway: parsed.autoStartGateway ?? defaultConfig.autoStartGateway,
         onboardingCompleted: parsed.onboardingCompleted ?? defaultConfig.onboardingCompleted,
         updatedAt: parsed.updatedAt ?? defaultConfig.updatedAt

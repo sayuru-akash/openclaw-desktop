@@ -165,9 +165,20 @@ export interface AppConfig {
   modelProvider: string;
   modelName: string;
   modelApiKey: string;
+  authWebBaseUrl: string;
+  accountAuthorized: boolean;
+  accountUserId: string;
   autoStartGateway: boolean;
   onboardingCompleted: boolean;
   updatedAt: string;
+}
+
+export interface AuthSessionStatus {
+  baseUrl: string;
+  reachable: boolean;
+  authenticated: boolean;
+  userId: string | null;
+  error?: string;
 }
 
 export interface RendererApi {
@@ -199,6 +210,9 @@ export interface RendererApi {
   gatewayStart: () => Promise<CommandResult>;
   gatewayStartStreaming: () => Promise<CommandResult>;
   gatewayStop: () => Promise<CommandResult>;
+  openAuthSignIn: () => Promise<boolean>;
+  runAuthHandoff: () => Promise<AuthSessionStatus>;
+  getAuthSessionStatus: () => Promise<AuthSessionStatus>;
   loadConfig: () => Promise<AppConfig>;
   saveConfig: (config: Partial<AppConfig>) => Promise<AppConfig>;
   getSetupState: () => Promise<SetupState>;

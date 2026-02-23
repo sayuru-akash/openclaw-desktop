@@ -28,6 +28,7 @@ import {
 import type {
   AlwaysOnGatewayStatus,
   AppConfig,
+  AuthSessionStatus,
   ChannelStatusItem,
   ChannelStatusResult,
   CommandResult,
@@ -94,7 +95,7 @@ interface StatusTableRow {
   variant: "default" | "success" | "warning" | "danger";
 }
 
-type OnboardingStepId = "welcome" | "runtime" | "openclaw" | "gateway" | "model" | "done";
+type OnboardingStepId = "welcome" | "account" | "runtime" | "openclaw" | "gateway" | "model" | "done";
 
 interface OnboardingStep {
   id: OnboardingStepId;
@@ -105,6 +106,7 @@ interface OnboardingStep {
 
 const onboardingSteps: OnboardingStep[] = [
   { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Set up OpenClaw in a few steps." },
+  { id: "account", label: "Account", title: "Sign In", subtitle: "Sign in to your OpenClaw account." },
   { id: "runtime", label: "Runtime", title: "Node Runtime", subtitle: "Install Node.js and npm." },
   { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI." },
   { id: "gateway", label: "Gateway", title: "Start Gateway", subtitle: "Start local gateway." },
@@ -176,6 +178,7 @@ export function App() {
   const [setupState, setSetupState] = useState<SetupState>(DEFAULT_SETUP);
   const [configDraft, setConfigDraft] = useState<AppConfig | null>(null);
   const [alwaysOnStatus, setAlwaysOnStatus] = useState<AlwaysOnGatewayStatus | null>(null);
+  const [authSession, setAuthSession] = useState<AuthSessionStatus | null>(null);
   const [channelStatus, setChannelStatus] = useState<ChannelStatusResult | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatusResult | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatusEvent | null>(null);
@@ -195,6 +198,7 @@ export function App() {
   const [chatFallbackVisible, setChatFallbackVisible] = useState(false);
   const [controlStatusText, setControlStatusText] = useState("Waiting for gateway readiness check...");
   const [controlFallbackVisible, setControlFallbackVisible] = useState(false);
+  const onboardingInitializedRef = useRef(false);
 
   const chatWebviewRef = useRef<any>(null);
   const controlWebviewRef = useRef<any>(null);
@@ -305,6 +309,23 @@ export function App() {
     return status;
   }, []);
 
+  const refreshAuthSession = useCallback(async () => {
+    const status = await window.openclaw.getAuthSessionStatus();
+    setAuthSession(status);
+    setConfigDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        accountAuthorized: status.authenticated,
+        accountUserId: status.userId ?? ""
+      };
+    });
+
+    return status;
+  }, []);
+
   const refreshChannels = useCallback(async (withLog = false) => {
     const status = await window.openclaw.getChannelStatuses();
     setChannelStatus(status);
@@ -337,14 +358,14 @@ export function App() {
 
   const refreshAll = useCallback(async (withLog = false) => {
     const env = await refreshEnvironmentSetup(withLog);
-    await Promise.all([refreshConfig(), refreshAlwaysOn(), refreshUpdate()]);
+    await Promise.all([refreshConfig(), refreshAlwaysOn(), refreshUpdate(), refreshAuthSession()]);
 
     if (env.openClawInstalled) {
       await Promise.all([refreshChannels(), refreshModels()]);
     }
 
     return env;
-  }, [refreshAlwaysOn, refreshChannels, refreshConfig, refreshEnvironmentSetup, refreshModels, refreshUpdate]);
+  }, [refreshAlwaysOn, refreshAuthSession, refreshChannels, refreshConfig, refreshEnvironmentSetup, refreshModels, refreshUpdate]);
 
   useEffect(() => {
     void refreshAll();
@@ -382,6 +403,18 @@ export function App() {
     root.classList.toggle("light", theme === "light");
     window.localStorage.setItem("openclaw-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!configDraft || onboardingInitializedRef.current) {
+      return;
+    }
+    onboardingInitializedRef.current = true;
+    if (!configDraft.onboardingCompleted) {
+      setWorkspace("setup");
+      setPane("onboarding");
+      setWizardStepIndex(0);
+    }
+  }, [configDraft]);
 
   const applyManagedModelProvider = (provider: string) => {
     setManageProvider(provider);
@@ -483,6 +516,9 @@ export function App() {
       modelProvider: configDraft.modelProvider,
       modelName: configDraft.modelName,
       modelApiKey: configDraft.modelApiKey,
+      authWebBaseUrl: configDraft.authWebBaseUrl,
+      accountAuthorized: configDraft.accountAuthorized,
+      accountUserId: configDraft.accountUserId,
       autoStartGateway: configDraft.autoStartGateway,
       onboardingCompleted: configDraft.onboardingCompleted
     });
@@ -527,6 +563,52 @@ export function App() {
   const installUpdate = () => runAction("Install update", async () => {
     await window.openclaw.installDownloadedUpdate();
     appendLog("Installer requested. App may restart.");
+  });
+
+  const openAuthSignIn = () => runAction("Open sign-in", async () => {
+    const opened = await window.openclaw.openAuthSignIn();
+    if (!opened) {
+      throw new Error("Could not open sign-in page.");
+    }
+  });
+
+  const completeAuthHandoff = () => runAction("Browser sign-in", async () => {
+    const status = await window.openclaw.runAuthHandoff();
+    setAuthSession(status);
+
+    if (!status.reachable) {
+      throw new Error(status.error || "Auth service is unreachable.");
+    }
+
+    const nextConfig = await window.openclaw.saveConfig({
+      authWebBaseUrl: status.baseUrl,
+      accountAuthorized: status.authenticated,
+      accountUserId: status.userId ?? ""
+    });
+    setConfigDraft(nextConfig);
+
+    if (!status.authenticated) {
+      throw new Error(status.error || "Sign-in was not completed.");
+    }
+  });
+
+  const verifyAuthSession = () => runAction("Verify sign-in", async () => {
+    const status = await window.openclaw.getAuthSessionStatus();
+    setAuthSession(status);
+
+    if (!status.reachable) {
+      throw new Error(status.error || "Auth service is unreachable.");
+    }
+
+    const nextConfig = await window.openclaw.saveConfig({
+      accountAuthorized: status.authenticated,
+      accountUserId: status.userId ?? ""
+    });
+    setConfigDraft(nextConfig);
+
+    if (!status.authenticated) {
+      throw new Error("You are not signed in yet.");
+    }
   });
 
   const refreshAllAction = () => runAction("Refresh", async () => {
@@ -979,6 +1061,15 @@ export function App() {
               ))}
             </Select>
           </div>
+
+          <div className="space-y-1 md:col-span-2">
+            <p className="text-[11px] text-muted-foreground">Auth URL</p>
+            <Input
+              value={configDraft?.authWebBaseUrl ?? ""}
+              onChange={(event) => setConfigDraft((current) => current ? { ...current, authWebBaseUrl: event.target.value } : current)}
+              placeholder="https://auth.openclawdesk.top"
+            />
+          </div>
         </div>
 
         <div className="grid gap-2">
@@ -1153,6 +1244,8 @@ export function App() {
     switch (stepId) {
       case "welcome":
         return wizardStepIndex > 0;
+      case "account":
+        return Boolean(configDraft?.accountAuthorized);
       case "runtime":
         return runtimeReady === true;
       case "openclaw":
@@ -1180,6 +1273,20 @@ export function App() {
     const step = currentOnboardingStep.id;
 
     if (step === "welcome") {
+      advanceOnboarding();
+      return;
+    }
+
+    if (step === "account") {
+      if (configDraft?.accountAuthorized) {
+        advanceOnboarding();
+        return;
+      }
+
+      const ok = await completeAuthHandoff();
+      if (!ok) {
+        return;
+      }
       advanceOnboarding();
       return;
     }
@@ -1269,6 +1376,8 @@ export function App() {
     switch (currentOnboardingStep.id) {
       case "welcome":
         return "Start";
+      case "account":
+        return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
         return runtimeReady ? "Continue" : "Install Node";
       case "openclaw":
@@ -1331,6 +1440,37 @@ export function App() {
                 <Card>
                   <CardContent className="pt-5 text-sm text-muted-foreground">
                     Setup installs runtime, OpenClaw, gateway, and model.
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {currentOnboardingStep.id === "account" ? (
+                <Card>
+                  <CardContent className="space-y-3 pt-5">
+                    <p className="text-sm text-muted-foreground">
+                      {configDraft?.authWebBaseUrl || authSession?.baseUrl}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Session</span>
+                      <Badge variant={configDraft?.accountAuthorized ? "success" : "warning"}>
+                        {configDraft?.accountAuthorized ? "Signed in" : "Signed out"}
+                      </Badge>
+                    </div>
+                    {configDraft?.accountUserId ? (
+                      <p className="text-xs text-muted-foreground">User: {configDraft.accountUserId}</p>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={() => void completeAuthHandoff()} disabled={isBusy}>
+                        Sign In
+                      </Button>
+                      <Button variant="outline" onClick={() => void openAuthSignIn()} disabled={isBusy}>
+                        Open Sign-In
+                      </Button>
+                      <Button variant="outline" onClick={() => void verifyAuthSession()} disabled={isBusy}>
+                        Check Session
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ) : null}
@@ -1438,6 +1578,11 @@ export function App() {
                     label: "Gateway",
                     value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
                     variant: toVariant(environment ? environment.gatewayRunning : null)
+                  },
+                  {
+                    label: "Account",
+                    value: configDraft?.accountAuthorized ? "Signed in" : "Pending",
+                    variant: configDraft?.accountAuthorized ? "success" : "warning"
                   },
                   {
                     label: "Model",
