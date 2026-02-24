@@ -31,6 +31,20 @@ const pendingSetupEvents: SetupProgressEvent[] = [];
 const pendingUpdateEvents: UpdateStatusEvent[] = [];
 let trayGatewayRunning = false;
 let activeAuthHandoff: Promise<AuthSessionStatus> | null = null;
+const APP_PROTOCOL = "openclawdesktop";
+let pendingProtocolUrl: string | null = null;
+
+function extractProtocolUrl(argv: string[]): string | null {
+  const match = argv.find((value) => /^openclawdesktop:\/\//i.test(value.trim()));
+  return match ? match.trim() : null;
+}
+
+function handleProtocolOpen(url: string): void {
+  pendingProtocolUrl = url;
+  if (app.isReady()) {
+    showMainWindow();
+  }
+}
 
 function normalizeAuthBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -289,17 +303,66 @@ function createWindow(): void {
     }
   });
 
-  void mainWindow.loadFile(resolveRendererFile());
+  let shown = false;
+  const fallbackShowTimer = setTimeout(() => {
+    if (!shown) {
+      console.warn("[window] ready-to-show timed out; forcing window display.");
+      showWindow("fallback-timeout");
+    }
+  }, 10_000);
 
-  mainWindow.once("ready-to-show", () => {
+  const clearFallbackTimer = () => {
+    clearTimeout(fallbackShowTimer);
+  };
+
+  const showWindow = (reason: string) => {
+    if (!mainWindow || mainWindow.isDestroyed() || shown) {
+      return;
+    }
+
+    shown = true;
+    clearFallbackTimer();
+    console.info(`[window] showing main window (${reason}).`);
+
     flushPendingSetupEvents();
     flushPendingUpdateEvents();
+    if (pendingProtocolUrl) {
+      mainWindow.webContents.send("auth:protocol-open", pendingProtocolUrl);
+      pendingProtocolUrl = null;
+    }
 
-    if (process.platform === "win32" && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMaximized()) {
+    if (process.platform === "win32" && !mainWindow.isMaximized()) {
       mainWindow.maximize();
     }
 
-    mainWindow?.show();
+    mainWindow.show();
+  };
+
+  void mainWindow.loadFile(resolveRendererFile());
+
+  mainWindow.once("ready-to-show", () => {
+    showWindow("ready-to-show");
+  });
+
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (!shown) {
+      showWindow("did-finish-load");
+    }
+  });
+
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) {
+        return;
+      }
+      console.error(`[window] renderer failed to load (${errorCode}) ${errorDescription} at ${validatedURL}`);
+      showWindow("did-fail-load");
+    }
+  );
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[window] renderer process gone: ${details.reason}`);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -316,6 +379,7 @@ function createWindow(): void {
   });
 
   mainWindow.on("closed", () => {
+    clearFallbackTimer();
     mainWindow = null;
   });
 
@@ -668,7 +732,40 @@ async function maybeAutoStartGateway(): Promise<void> {
   }
 }
 
-app.whenReady().then(async () => {
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+app.on("second-instance", (_event, argv) => {
+  const url = extractProtocolUrl(argv);
+  if (url) {
+    handleProtocolOpen(url);
+    return;
+  }
+  showMainWindow();
+});
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (/^openclawdesktop:\/\//i.test(url)) {
+    handleProtocolOpen(url);
+  }
+});
+
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [path.resolve(process.argv[1] ?? "")]);
+  } else {
+    app.setAsDefaultProtocolClient(APP_PROTOCOL);
+  }
+
+  const launchUrl = extractProtocolUrl(process.argv);
+  if (launchUrl) {
+    pendingProtocolUrl = launchUrl;
+  }
+
   configStore = new ConfigStore(app.getPath("userData"));
   setupOrchestrator = new SetupOrchestrator(
     environmentService,
@@ -694,10 +791,11 @@ app.whenReady().then(async () => {
 
     showMainWindow();
   });
-}).catch((error) => {
-  const detail = error instanceof Error ? error.message : String(error);
-  console.error(`[app] startup failed: ${detail}`);
-});
+  }).catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[app] startup failed: ${detail}`);
+  });
+}
 
 app.on("before-quit", () => {
   isQuitting = true;

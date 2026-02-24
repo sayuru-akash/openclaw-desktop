@@ -146,6 +146,15 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]);
+}
+
 function getChannel(result: ChannelStatusResult | null, channel: "whatsapp" | "telegram"): ChannelStatusItem {
   const fallback: ChannelStatusItem = {
     channel,
@@ -358,15 +367,52 @@ export function App() {
   }, []);
 
   const refreshAll = useCallback(async (withLog = false) => {
-    const env = await refreshEnvironmentSetup(withLog);
-    await Promise.all([refreshConfig(), refreshAlwaysOn(), refreshUpdate(), refreshAuthSession()]);
+    const baselineResults = await Promise.allSettled([
+      refreshConfig(),
+      refreshAlwaysOn(),
+      refreshUpdate(),
+      refreshAuthSession()
+    ]);
 
-    if (env.openClawInstalled) {
-      await Promise.all([refreshChannels(), refreshModels()]);
+    for (const result of baselineResults) {
+      if (result.status === "rejected") {
+        appendLog(`Startup check failed: ${formatError(result.reason)}`);
+      }
+    }
+
+    let env: EnvironmentStatus | null = null;
+    try {
+      env = await withTimeout(
+        refreshEnvironmentSetup(withLog),
+        20_000,
+        "Environment check timed out."
+      );
+    } catch (err) {
+      const message = formatError(err);
+      setError((current) => current || message);
+      appendLog(`Environment check failed: ${message}`);
+    }
+
+    if (env?.openClawInstalled) {
+      const detailResults = await Promise.allSettled([refreshChannels(), refreshModels()]);
+      for (const result of detailResults) {
+        if (result.status === "rejected") {
+          appendLog(`Startup detail check failed: ${formatError(result.reason)}`);
+        }
+      }
     }
 
     return env;
-  }, [refreshAlwaysOn, refreshAuthSession, refreshChannels, refreshConfig, refreshEnvironmentSetup, refreshModels, refreshUpdate]);
+  }, [
+    appendLog,
+    refreshAlwaysOn,
+    refreshAuthSession,
+    refreshChannels,
+    refreshConfig,
+    refreshEnvironmentSetup,
+    refreshModels,
+    refreshUpdate
+  ]);
 
   useEffect(() => {
     void refreshAll();

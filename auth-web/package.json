@@ -11,14 +11,18 @@
   "dependencies": {
     "@clerk/nextjs": "latest",
     "@clerk/themes": "^2.4.55",
+    "drizzle-orm": "^0.45.1",
     "next": "latest",
+    "pg": "^8.18.0",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
+    "@types/pg": "^8.16.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "drizzle-kit": "^0.31.9",
     "typescript": "latest"
   }
 }
