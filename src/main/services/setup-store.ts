@@ -9,33 +9,25 @@ const defaultState: SetupState = {
   updatedAt: new Date(0).toISOString()
 };
 
-const LEGACY_WSL_STAGES = new Set(["installing_wsl", "awaiting_reboot", "resuming_after_reboot"]);
-
 function sanitizeMessage(message: unknown): string {
   if (typeof message !== "string" || !message.trim()) {
     return defaultState.message;
   }
 
-  if (/wsl/i.test(message)) {
-    return "Legacy setup state detected. Run guided setup again for native Windows mode.";
-  }
-
   return message;
 }
 
-function normalizeStage(stage: unknown): { stage: SetupStage; migratedFromLegacy: boolean } {
+function normalizeStage(stage: unknown): SetupStage {
   if (typeof stage !== "string") {
-    return { stage: defaultState.stage, migratedFromLegacy: false };
-  }
-
-  if (LEGACY_WSL_STAGES.has(stage)) {
-    return { stage: "failed", migratedFromLegacy: true };
+    return defaultState.stage;
   }
 
   const allowed: SetupStage[] = [
     "idle",
     "checking_prereqs",
-    "installing_node",
+    "installing_wsl",
+    "awaiting_reboot",
+    "installing_runtime",
     "installing_openclaw",
     "running_onboarding",
     "starting_gateway",
@@ -44,10 +36,10 @@ function normalizeStage(stage: unknown): { stage: SetupStage; migratedFromLegacy
     "failed"
   ];
   if (allowed.includes(stage as SetupStage)) {
-    return { stage: stage as SetupStage, migratedFromLegacy: false };
+    return stage as SetupStage;
   }
 
-  return { stage: defaultState.stage, migratedFromLegacy: false };
+  return defaultState.stage;
 }
 
 export class SetupStore {
@@ -64,11 +56,9 @@ export class SetupStore {
       const normalizedStage = normalizeStage(parsed.stage);
 
       return {
-        stage: normalizedStage.stage,
+        stage: normalizedStage,
         requiresReboot: parsed.requiresReboot ?? defaultState.requiresReboot,
-        message: normalizedStage.migratedFromLegacy
-          ? "Legacy setup state detected. Run guided setup again for native Windows mode."
-          : sanitizeMessage(parsed.message),
+        message: sanitizeMessage(parsed.message),
         updatedAt: parsed.updatedAt ?? defaultState.updatedAt
       };
     } catch {

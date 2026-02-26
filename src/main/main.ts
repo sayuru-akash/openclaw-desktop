@@ -653,7 +653,7 @@ function registerIpcHandlers(): void {
     environmentService.installNodeRuntimeStreaming((line, stream) => {
       broadcastSetupProgress({
         timestamp: new Date().toISOString(),
-        stage: "installing_node",
+        stage: "installing_wsl",
         level: stream === "stderr" ? "warning" : "info",
         source: stream,
         message: line

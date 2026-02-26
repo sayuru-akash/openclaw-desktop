@@ -6,7 +6,7 @@ Windows-first desktop app for [OpenClaw](https://github.com/openclaw). Install o
 
 ## How it works
 
-1. **Install** — Run the `.exe` installer. It sets up Node.js and OpenClaw automatically.
+1. **Install** — Run the `.exe` installer. Guided setup installs WSL + Ubuntu, Node.js, npm, Homebrew, and OpenClaw in WSL.
 2. **Onboard** — A step-by-step UI walks you through provider, model, and channel (WhatsApp/Telegram) setup.
 3. **Run** — The gateway runs in the background with tray controls. Manage channels, models, and workspace files from the app.
 
@@ -14,7 +14,7 @@ Windows-first desktop app for [OpenClaw](https://github.com/openclaw). Install o
 
 Get the latest installer from [Releases](https://github.com/hith3sh/openclaw-desktop/releases/latest).
 
-**Requirements:** Windows 10 (build 19041+) or Windows 11.
+**Requirements:** Windows 10 (build 19041+) or Windows 11 with virtualization enabled.
 
 ## Development
 

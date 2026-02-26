@@ -8,7 +8,9 @@ export interface CommandResult {
 export type SetupStage =
   | "idle"
   | "checking_prereqs"
-  | "installing_node"
+  | "installing_wsl"
+  | "awaiting_reboot"
+  | "installing_runtime"
   | "installing_openclaw"
   | "running_onboarding"
   | "starting_gateway"
@@ -86,8 +88,13 @@ export interface EnvironmentStatus {
   checkedAt: string;
   platform: NodeJS.Platform;
   isWindows: boolean;
+  wslInstalled: boolean;
+  wslDistro: string;
+  wslDistroInstalled: boolean;
+  wslReady: boolean;
   nodeInstalled: boolean;
   npmInstalled: boolean;
+  brewInstalled: boolean;
   openClawInstalled: boolean;
   gatewayRunning: boolean;
   notes: string[];

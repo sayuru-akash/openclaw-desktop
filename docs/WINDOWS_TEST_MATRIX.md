@@ -1,10 +1,10 @@
 # Windows Test Matrix
 
-Last updated: 2026-02-22
+Last updated: 2026-02-26
 
 ## Goal
 
-Validate native Windows setup, onboarding, and background runtime on:
+Validate WSL-first setup, onboarding, and background runtime on:
 - Windows 10 (build 19045+)
 - Windows 11
 
@@ -31,12 +31,14 @@ Use clean VMs for each run:
 - Launch app.
 - Verify app opens with onboarding workspace.
 
-2. Node.js runtime bootstrap
+2. WSL bootstrap
 - Start guided setup.
 - Accept UAC prompt if shown.
-- Verify Node.js + npm status become `Installed`.
+- If prompted, restart Windows and reopen app.
+- Verify WSL + Ubuntu status become `Installed`.
 
-3. OpenClaw native install
+3. Runtime + OpenClaw install in WSL
+- Verify Node.js + npm + Homebrew status become `Installed` in setup UI.
 - Verify OpenClaw install step completes.
 - Verify `OpenClaw` status becomes `Installed`.
 

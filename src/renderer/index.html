@@ -42,7 +42,7 @@
               <p id="platformValue">Pending</p>
             </article>
             <article class="status-card">
-              <h3>Node.js</h3>
+              <h3>WSL</h3>
               <p id="nodeValue">Pending</p>
             </article>
             <article class="status-card">
@@ -75,7 +75,7 @@
           <p class="panel-caption command-caption">Quick Actions</p>
           <div class="actions compact-actions">
             <button id="guidedSetupButton" class="button primary with-icon"><span class="btn-icon icon-quick-setup" aria-hidden="true"></span><span>Quick Setup</span></button>
-            <button id="installNodeButton" class="button with-icon"><span class="btn-icon icon-install-node" aria-hidden="true"></span><span>Install Node</span></button>
+            <button id="installNodeButton" class="button with-icon"><span class="btn-icon icon-install-node" aria-hidden="true"></span><span>Install WSL</span></button>
             <button id="installOpenClawButton" class="button with-icon"><span class="btn-icon icon-install-openclaw" aria-hidden="true"></span><span>Install OpenClaw</span></button>
             <button id="runOnboardingButton" class="button with-icon"><span class="btn-icon icon-cli" aria-hidden="true"></span><span>CLI Onboard</span></button>
           </div>
@@ -105,10 +105,10 @@
 
           <section class="onboarding-step" data-onboarding-step="welcome">
             <h3>Welcome</h3>
-            <p>This flow installs Node.js, installs OpenClaw, starts the gateway, and sets your first model.</p>
+            <p>This flow installs WSL/runtime (Node.js, npm, Homebrew), installs OpenClaw, starts the gateway, and sets your first model.</p>
             <ul class="onboarding-list">
-              <li>Admin prompt may appear during Node install.</li>
-              <li>OpenClaw installs in an app-managed local folder.</li>
+              <li>Admin prompt may appear during WSL install.</li>
+              <li>OpenClaw installs inside WSL in an app-managed prefix.</li>
               <li>You can change model and channels later in side menu.</li>
             </ul>
             <div class="actions compact-actions">
@@ -117,10 +117,10 @@
           </section>
 
           <section class="onboarding-step hidden" data-onboarding-step="node">
-            <h3>Install Node.js Runtime</h3>
-            <p id="onboardingNodeStatus" class="panel-caption">Checking Node.js status...</p>
+            <h3>Install WSL Runtime</h3>
+            <p id="onboardingNodeStatus" class="panel-caption">Checking WSL runtime status (Node.js, npm, Homebrew)...</p>
             <div class="actions compact-actions">
-              <button id="onboardingInstallNodeButton" class="button primary">Install Node.js</button>
+              <button id="onboardingInstallNodeButton" class="button primary">Install WSL</button>
               <button id="onboardingRecheckNodeButton" class="button">Recheck</button>
               <button id="onboardingContinueToOpenClawButton" class="button">Continue</button>
             </div>

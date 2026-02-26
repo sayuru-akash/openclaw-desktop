@@ -108,8 +108,8 @@ interface OnboardingStep {
 
 const onboardingSteps: OnboardingStep[] = [
   { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Sign in and set up OpenClaw." },
-  { id: "runtime", label: "Runtime", title: "Node Runtime", subtitle: "Install Node.js and npm." },
-  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI." },
+  { id: "runtime", label: "WSL", title: "Install WSL", subtitle: "Install WSL, Ubuntu, Node.js, npm, and Homebrew." },
+  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI in WSL." },
   { id: "gateway", label: "Gateway", title: "Start Gateway", subtitle: "Start local gateway." },
   { id: "model", label: "Model", title: "Pick Model", subtitle: "Choose provider and model." },
   { id: "done", label: "Done", title: "Finish", subtitle: "Complete onboarding and open the app." }
@@ -200,6 +200,9 @@ export function App() {
   const [manageModel, setManageModel] = useState("");
   const [telegramToken, setTelegramToken] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [actionProgressLabel, setActionProgressLabel] = useState("");
+  const [actionProgressValue, setActionProgressValue] = useState(0);
+  const [actionProgressState, setActionProgressState] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [error, setError] = useState("");
   const [logs, setLogs] = useState<string[]>(["App ready."]);
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -213,13 +216,15 @@ export function App() {
   const chatWebviewRef = useRef<any>(null);
   const controlWebviewRef = useRef<any>(null);
   const chatTabSelectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const actionProgressHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runtimeReady = useMemo(() => {
     if (!environment) {
       return null;
     }
 
-    return environment.nodeInstalled && environment.npmInstalled;
+    return environment.wslReady && environment.nodeInstalled && environment.npmInstalled && environment.brewInstalled;
   }, [environment]);
 
   const gatewayReady = useMemo(() => {
@@ -227,7 +232,7 @@ export function App() {
       return null;
     }
 
-    return environment.isWindows && environment.openClawInstalled && environment.gatewayRunning;
+    return environment.isWindows && environment.wslReady && environment.openClawInstalled && environment.gatewayRunning;
   }, [environment]);
 
   const modelConfigured = useMemo(() => {
@@ -237,7 +242,19 @@ export function App() {
   }, [configDraft?.modelName, configDraft?.modelProvider, modelStatus?.model, modelStatus?.provider]);
 
   const isBusy = Boolean(busyAction);
+  const showActionProgress = actionProgressState !== "idle";
   const onboardingLocked = Boolean(configDraft && !configDraft.onboardingCompleted);
+
+  const clearActionProgressTimers = useCallback(() => {
+    if (actionProgressTimerRef.current) {
+      clearInterval(actionProgressTimerRef.current);
+      actionProgressTimerRef.current = null;
+    }
+    if (actionProgressHideTimerRef.current) {
+      clearTimeout(actionProgressHideTimerRef.current);
+      actionProgressHideTimerRef.current = null;
+    }
+  }, []);
 
   const renderStatusTable = (rows: StatusTableRow[], compact = false) => (
     <div className="rounded-md border bg-muted/30">
@@ -264,6 +281,36 @@ export function App() {
     </div>
   );
 
+  const renderActionProgress = () => {
+    if (!showActionProgress) {
+      return null;
+    }
+
+    const toneClass = actionProgressState === "failed" ? "bg-[#d56a76]" : "bg-foreground";
+    const statusText = actionProgressState === "running"
+      ? "Running"
+      : actionProgressState === "done"
+        ? "Completed"
+        : "Failed";
+
+    return (
+      <Card className="border-dashed">
+        <CardContent className="space-y-2 pt-4">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{actionProgressLabel || "Working..."}</span>
+            <span>{statusText} - {actionProgressValue}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={`h-full transition-all duration-300 ease-out ${toneClass}`}
+              style={{ width: `${Math.max(0, Math.min(100, actionProgressValue))}%` }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const appendLog = useCallback((message: string) => {
     const line = `[${new Date().toLocaleTimeString()}] ${message}`;
     setLogs((current) => [line, ...current].slice(0, 300));
@@ -273,23 +320,54 @@ export function App() {
     label: string,
     fn: () => Promise<void>
   ): Promise<boolean> => {
+    clearActionProgressTimers();
     setBusyAction(label);
     setError("");
+    setActionProgressLabel(label);
+    setActionProgressValue(8);
+    setActionProgressState("running");
     appendLog(`${label}...`);
+    actionProgressTimerRef.current = setInterval(() => {
+      setActionProgressValue((current) => {
+        if (current >= 95) {
+          return current;
+        }
+        if (current < 35) {
+          return current + 7;
+        }
+        if (current < 70) {
+          return current + 4;
+        }
+        return current + 2;
+      });
+    }, 700);
 
     try {
       await fn();
+      setActionProgressValue(100);
+      setActionProgressState("done");
       appendLog(`${label}: done.`);
       return true;
     } catch (err) {
       const message = formatError(err);
       setError(message);
+      setActionProgressValue(100);
+      setActionProgressState("failed");
       appendLog(`${label}: failed - ${message}`);
       return false;
     } finally {
       setBusyAction("");
+      if (actionProgressTimerRef.current) {
+        clearInterval(actionProgressTimerRef.current);
+        actionProgressTimerRef.current = null;
+      }
+      actionProgressHideTimerRef.current = setTimeout(() => {
+        setActionProgressState("idle");
+        setActionProgressValue(0);
+        setActionProgressLabel("");
+      }, 1400);
     }
-  }, [appendLog]);
+  }, [appendLog, clearActionProgressTimers]);
 
   const refreshEnvironmentSetup = useCallback(async (withLog = false) => {
     const [env, setup] = await Promise.all([
@@ -424,6 +502,15 @@ export function App() {
         message: event.message,
         updatedAt: event.timestamp
       }));
+      setActionProgressValue((current) => {
+        if (actionProgressState !== "running") {
+          return current;
+        }
+        if (current >= 95) {
+          return current;
+        }
+        return current + 1;
+      });
       appendLog(`${event.stage}: ${event.message}`);
     });
 
@@ -436,7 +523,7 @@ export function App() {
       removeSetupProgressListener();
       removeUpdateStatusListener();
     };
-  }, [appendLog, refreshAll]);
+  }, [actionProgressState, appendLog, refreshAll]);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("openclaw-theme");
@@ -475,9 +562,9 @@ export function App() {
   const settingsProvider = configDraft?.modelProvider ?? "";
   const settingsModelOptions = settingsProvider ? modelStatus?.modelsByProvider?.[settingsProvider] ?? [] : [];
 
-  const installNode = () => runAction("Node install", async () => {
+  const installNode = () => runAction("WSL install", async () => {
     const result = await window.openclaw.installNodeRuntime();
-    summarizeCommandResult("Node install", result, appendLog);
+    summarizeCommandResult("WSL install", result, appendLog);
     await refreshAll();
   });
 
@@ -863,6 +950,12 @@ export function App() {
     };
   }, [clearChatTabTimer]);
 
+  useEffect(() => {
+    return () => {
+      clearActionProgressTimers();
+    };
+  }, [clearActionProgressTimers]);
+
   const renderOnboardingPane = () => (
     <div className="space-y-5">
       <Card>
@@ -873,14 +966,29 @@ export function App() {
         <CardContent>
           {renderStatusTable([
             {
-              label: "Node.js runtime",
+              label: "WSL",
+              value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
+              variant: toVariant(environment ? environment.wslInstalled : null)
+            },
+            {
+              label: "Ubuntu distro",
+              value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+              variant: toVariant(environment ? environment.wslDistroInstalled : null)
+            },
+            {
+              label: "Node.js (WSL)",
               value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
               variant: toVariant(environment ? environment.nodeInstalled : null)
             },
             {
-              label: "npm package manager",
+              label: "npm (WSL)",
               value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
               variant: toVariant(environment ? environment.npmInstalled : null)
+            },
+            {
+              label: "Homebrew (WSL)",
+              value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
+              variant: toVariant(environment ? environment.brewInstalled : null)
             },
             {
               label: "OpenClaw CLI",
@@ -904,7 +1012,7 @@ export function App() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Button onClick={installNode} disabled={isBusy || !environment?.isWindows}>
               <Wrench className="h-3.5 w-3.5" />
-              Install Node
+              Install WSL
             </Button>
             <Button onClick={installOpenClaw} disabled={isBusy || runtimeReady !== true}>
               <Bot className="h-3.5 w-3.5" />
@@ -925,6 +1033,8 @@ export function App() {
           </div>
         </CardContent>
       </Card>
+
+      {renderActionProgress()}
     </div>
   );
 
@@ -1334,7 +1444,7 @@ export function App() {
         return;
       }
       const env = await refreshEnvironmentSetup();
-      if (env.nodeInstalled && env.npmInstalled) {
+      if (env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
         advanceOnboarding();
       }
       return;
@@ -1410,7 +1520,7 @@ export function App() {
       case "welcome":
         return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
-        return runtimeReady ? "Continue" : "Install Node";
+        return runtimeReady ? "Continue" : "Install WSL";
       case "openclaw":
         return environment?.openClawInstalled ? "Continue" : "Install OpenClaw";
       case "gateway":
@@ -1492,14 +1602,29 @@ export function App() {
               {currentOnboardingStep.id === "runtime" ? (
                 renderStatusTable([
                   {
-                    label: "Node.js",
+                    label: "WSL",
+                    value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.wslInstalled : null)
+                  },
+                  {
+                    label: "Ubuntu distro",
+                    value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.wslDistroInstalled : null)
+                  },
+                  {
+                    label: "Node.js (WSL)",
                     value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
                     variant: toVariant(environment ? environment.nodeInstalled : null)
                   },
                   {
-                    label: "npm",
+                    label: "npm (WSL)",
                     value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
                     variant: toVariant(environment ? environment.npmInstalled : null)
+                  },
+                  {
+                    label: "Homebrew (WSL)",
+                    value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
+                    variant: toVariant(environment ? environment.brewInstalled : null)
                   }
                 ])
               ) : null}
@@ -1557,6 +1682,8 @@ export function App() {
                 </Card>
               ) : null}
             </div>
+
+            {renderActionProgress()}
 
             <div className="mt-6">
               <Button
@@ -1725,7 +1852,7 @@ export function App() {
 
             {renderStatusTable([
               {
-                label: "Node/npm",
+                label: "WSL Runtime",
                 value: readinessText(runtimeReady, "Ready", "Missing"),
                 variant: toVariant(runtimeReady)
               },

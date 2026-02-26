@@ -580,8 +580,14 @@ function setupStageLabel(stage) {
   if (stage === "checking_prereqs") {
     return "Checking Prereqs";
   }
-  if (stage === "installing_node") {
-    return "Installing Node";
+  if (stage === "installing_wsl") {
+    return "Installing WSL";
+  }
+  if (stage === "installing_runtime") {
+    return "Installing Runtime";
+  }
+  if (stage === "awaiting_reboot") {
+    return "Awaiting Restart";
   }
   if (stage === "installing_openclaw") {
     return "Installing OpenClaw";
@@ -653,7 +659,7 @@ function updateOnboardingUiFromState() {
   const setupState = lastSetupState;
 
   if (!status) {
-    onboardingElements.nodeStatus.textContent = "Checking Node.js status...";
+    onboardingElements.nodeStatus.textContent = "Checking WSL runtime status...";
     onboardingElements.openclawStatus.textContent = "Checking OpenClaw status...";
     onboardingElements.gatewayStatus.textContent = "Checking gateway status...";
     return;
@@ -662,13 +668,19 @@ function updateOnboardingUiFromState() {
   if (!status.isWindows) {
     onboardingElements.nodeStatus.textContent = "This onboarding flow requires Windows.";
   } else if (setupState && setupState.requiresReboot) {
-    onboardingElements.nodeStatus.textContent = "Restart recommended after Node.js install. Restart Windows, then recheck.";
-  } else if (status.nodeInstalled && status.npmInstalled) {
-    onboardingElements.nodeStatus.textContent = "Node.js runtime is ready.";
+    onboardingElements.nodeStatus.textContent = "Restart required after WSL setup. Restart Windows, then recheck.";
+  } else if (status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled) {
+    onboardingElements.nodeStatus.textContent = "WSL runtime is ready (Node, npm, Homebrew).";
+  } else if (status.wslInstalled && !status.wslDistroInstalled) {
+    onboardingElements.nodeStatus.textContent = "WSL is installed, but Ubuntu distro is missing.";
+  } else if (!status.wslInstalled) {
+    onboardingElements.nodeStatus.textContent = "WSL is not installed yet.";
+  } else if (status.nodeInstalled && status.npmInstalled && !status.brewInstalled) {
+    onboardingElements.nodeStatus.textContent = "Node.js/npm are ready, but Homebrew is missing.";
   } else if (status.nodeInstalled && !status.npmInstalled) {
-    onboardingElements.nodeStatus.textContent = "Node.js found but npm is missing. Reinstall Node.js runtime.";
+    onboardingElements.nodeStatus.textContent = "Node.js found in WSL but npm is missing.";
   } else {
-    onboardingElements.nodeStatus.textContent = "Node.js runtime not installed yet.";
+    onboardingElements.nodeStatus.textContent = "WSL runtime dependencies are not installed yet.";
   }
 
   onboardingElements.openclawStatus.textContent = status.openClawInstalled
@@ -705,7 +717,7 @@ function updateOnboardingUiFromState() {
     ? `Current: ${modelProvider} / ${modelName}`
     : "Set provider, model, and API key.";
 
-  onboardingElements.continueOpenClaw.disabled = !(status.nodeInstalled && status.npmInstalled);
+  onboardingElements.continueOpenClaw.disabled = !(status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
   onboardingElements.continueGateway.disabled = !status.openClawInstalled;
   onboardingElements.continueModel.disabled = !status.gatewayRunning;
   onboardingElements.continueDone.disabled = !(modelProvider && modelName);
@@ -713,7 +725,7 @@ function updateOnboardingUiFromState() {
 
 function getSuggestedOnboardingStep() {
   const status = lastEnvironmentStatus;
-  if (!status || !status.isWindows || !status.nodeInstalled || !status.npmInstalled) {
+  if (!status || !status.isWindows || !status.wslReady || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
     return "node";
   }
 
@@ -897,12 +909,12 @@ function renderSetupState(setupState) {
 function renderEnvironment(status) {
   lastEnvironmentStatus = status;
   setStatus(statusElements.platform, status.platform, status.isWindows ? "ok" : "bad");
-  setStatus(statusElements.node, status.nodeInstalled ? "Installed" : "Missing", status.nodeInstalled ? "ok" : "bad");
+  setStatus(statusElements.node, status.wslReady ? "Ready" : "Missing", status.wslReady ? "ok" : "bad");
   setStatus(statusElements.npm, status.npmInstalled ? "Installed" : "Missing", status.npmInstalled ? "ok" : "warn");
   setStatus(
     statusElements.runtime,
-    status.nodeInstalled && status.npmInstalled ? "Ready" : "Needs setup",
-    status.nodeInstalled && status.npmInstalled ? "ok" : "warn"
+    status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "Ready" : "Needs setup",
+    status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "ok" : "warn"
   );
   setStatus(statusElements.openclaw, status.openClawInstalled ? "Installed" : "Missing", status.openClawInstalled ? "ok" : "warn");
   setStatus(statusElements.gateway, status.gatewayRunning ? "Running" : "Stopped", status.gatewayRunning ? "ok" : "warn");
@@ -1045,7 +1057,8 @@ function applyActionAvailability(status, setupState) {
 
   const inProgressStageSet = new Set([
     "checking_prereqs",
-    "installing_node",
+    "installing_wsl",
+    "installing_runtime",
     "installing_openclaw",
     "running_onboarding",
     "starting_gateway"
@@ -1053,8 +1066,8 @@ function applyActionAvailability(status, setupState) {
   const inProgress = Boolean(setupState && inProgressStageSet.has(setupState.stage));
 
   actionButtons.guidedSetup.disabled = !status.isWindows || inProgress;
-  actionButtons.installNode.disabled = !status.isWindows || (status.nodeInstalled && status.npmInstalled) || inProgress;
-  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.nodeInstalled && status.npmInstalled);
+  actionButtons.installNode.disabled = !status.isWindows || status.wslReady || inProgress;
+  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
   actionButtons.runOnboarding.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStatus.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStart.disabled = inProgress || !status.openClawInstalled;
@@ -3184,13 +3197,13 @@ function wireActions() {
   onboardingElements.installNode.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Onboarding: installing Node.js runtime...");
+      appendLog("Onboarding: installing WSL runtime...");
       const result = await withInlineProgress(
         onboardingElements.nodeStatus,
-        "Installing Node.js (admin prompt may appear)",
+        "Installing WSL/runtime (admin prompt may appear)",
         () => window.openclaw.installNodeRuntimeStreaming()
       );
-      summarizeCommandResult("Node.js install", result);
+      summarizeCommandResult("WSL install", result);
       await runEnvironmentCheck();
       await refreshSetupState();
       setOnboardingStep("node");
@@ -3206,8 +3219,8 @@ function wireActions() {
   });
 
   onboardingElements.continueOpenClaw.addEventListener("click", () => {
-    if (!(lastEnvironmentStatus && lastEnvironmentStatus.nodeInstalled && lastEnvironmentStatus.npmInstalled)) {
-      onboardingElements.nodeStatus.textContent = "Finish Node.js setup before continuing.";
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.wslReady && lastEnvironmentStatus.nodeInstalled && lastEnvironmentStatus.npmInstalled && lastEnvironmentStatus.brewInstalled)) {
+      onboardingElements.nodeStatus.textContent = "Finish WSL runtime setup before continuing.";
       return;
     }
     setOnboardingStep("openclaw");
@@ -3362,7 +3375,7 @@ function wireActions() {
   byId("guidedSetupButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Starting guided setup. This installs Node.js, OpenClaw, and preps gateway for onboarding wizard.");
+      appendLog("Starting guided setup. This installs WSL/runtime, OpenClaw, and preps gateway for onboarding wizard.");
       const setupState = await window.openclaw.runGuidedSetup();
       renderSetupState(setupState);
       appendLog(`Setup: ${setupState.message}`);
@@ -3387,9 +3400,9 @@ function wireActions() {
   byId("installNodeButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Starting Node.js runtime installation. Approve Windows UAC prompt if asked.");
+      appendLog("Starting WSL/runtime installation. Approve Windows UAC prompt if asked.");
       const result = await window.openclaw.installNodeRuntime();
-      summarizeCommandResult("Node.js install", result);
+      summarizeCommandResult("WSL install", result);
       await runEnvironmentCheck();
       await refreshSetupState();
     });
@@ -3398,7 +3411,7 @@ function wireActions() {
   byId("installOpenClawButton").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     await withBusy(button, async () => {
-      appendLog("Installing OpenClaw on native Windows...");
+      appendLog("Installing OpenClaw in WSL...");
       const result = await window.openclaw.installOpenClaw();
       summarizeCommandResult("OpenClaw install", result);
       await runEnvironmentCheck();

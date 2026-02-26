@@ -1,6 +1,6 @@
 # OpenClaw Desktop Product Memory
 
-Last updated: 2026-02-22
+Last updated: 2026-02-26
 
 ## 1) Product Goal
 
@@ -29,8 +29,9 @@ Separate app from OpenClaw repo (no fork required for wrapper flow).
 
 Our app responsibilities:
 - Windows prerequisite checks
-- Node.js runtime bootstrap (auto-install)
-- OpenClaw native install in app-managed prefix
+- WSL2 + Ubuntu bootstrap (auto-install)
+- Runtime dependency install in WSL (Node.js, npm, Homebrew)
+- OpenClaw install in WSL app-managed prefix
 - gateway lifecycle (start/stop/status)
 - onboarding wizard UI
 - in-app embedded control experience
@@ -44,10 +45,11 @@ OpenClaw responsibilities:
 ## 4) Integration Model With OpenClaw
 
 ### 4.1 Commands we run
-- `node --version`
-- `npm --version`
-- `npm install -g openclaw --prefix %LOCALAPPDATA%\OpenClawDesktop\npm --no-fund --no-audit`
-- `openclaw gateway start|stop|status`
+- `wsl -l -q`
+- `wsl --install -d Ubuntu`
+- `wsl -d Ubuntu -- bash -lc "node --version && npm --version"`
+- `wsl -d Ubuntu -- bash -lc "npm install -g openclaw --prefix ~/.openclaw-desktop/npm --no-fund --no-audit"`
+- `wsl -d Ubuntu -- bash -lc "openclaw gateway start|stop|status"`
 
 ### 4.2 Onboarding method (primary)
 - Use Gateway wizard RPC from app UI:
@@ -68,8 +70,8 @@ No external browser dependency for normal user flow.
 
 1. Install app (`.exe`).
 2. First launch runs environment checks.
-3. If Node.js runtime missing, app installs Node.js LTS (winget first, MSI fallback).
-4. App installs OpenClaw natively.
+3. If WSL/Ubuntu/runtime are missing, app installs them (Node.js, npm, Homebrew).
+4. App installs OpenClaw in WSL.
 5. App starts gateway and verifies health.
 6. User completes onboarding via in-app wizard UI.
 7. App switches automatically to embedded Chat view.
@@ -103,8 +105,7 @@ No external browser dependency for normal user flow.
 
 ## 9) Current Product Decisions
 
-- Focus on native local Windows OpenClaw setup.
-- No WSL path in current product.
+- Focus on WSL-first OpenClaw setup on Windows.
 - No OpenClaw fork for wrapper layer.
 - In-app onboarding wizard is mandatory path (TUI fallback only).
 - In-app Control embedding is default post-setup experience.
@@ -116,9 +117,10 @@ No external browser dependency for normal user flow.
 ## 10) Done vs Next
 
 Implemented:
-- native Windows setup orchestration
-- Node.js auto-install flow (winget + MSI fallback)
-- OpenClaw native install via npm prefix
+- WSL-first setup orchestration
+- WSL/Ubuntu bootstrap flow
+- Runtime dependency install in WSL
+- OpenClaw install in WSL via npm prefix
 - live setup progress stream
 - in-app wizard RPC wiring
 - embedded Control/Chat workspaces with fallback

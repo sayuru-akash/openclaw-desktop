@@ -42,26 +42,31 @@ export class SetupOrchestrator extends EventEmitter {
     await this.saveState({
       stage: "checking_prereqs",
       requiresReboot: false,
-      message: "Checking native Windows prerequisites."
+      message: "Checking WSL prerequisites."
     });
 
-    if (!status.nodeInstalled || !status.npmInstalled) {
+    if (!status.wslReady || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
       await this.saveState({
-        stage: "installing_node",
+        stage: status.wslReady ? "installing_runtime" : "installing_wsl",
         requiresReboot: false,
-        message: "Installing Node.js LTS runtime..."
+        message: status.wslReady
+          ? "Installing runtime dependencies in WSL (Node, npm, Homebrew)..."
+          : `Installing WSL (${status.wslDistro})...`
       });
 
       const nodeInstall = await this.environmentService.installNodeRuntimeStreaming((line, stream) => {
-        this.emitProgress("installing_node", line, stream === "stderr" ? "warning" : "info", stream);
+        this.emitProgress(status.wslReady ? "installing_runtime" : "installing_wsl", line, stream === "stderr" ? "warning" : "info", stream);
       });
 
       if (!nodeInstall.ok) {
+        const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
         return this.saveState(
           {
             stage: "failed",
-            requiresReboot: false,
-            message: "Node.js installation failed. Retry setup or install Node.js LTS manually, then continue."
+            requiresReboot: rebootRequired,
+            message: rebootRequired
+              ? "WSL setup requested a restart. Restart Windows and continue setup."
+              : "WSL/runtime installation failed. Check logs and retry setup."
           },
           "error"
         );
@@ -69,20 +74,20 @@ export class SetupOrchestrator extends EventEmitter {
 
       const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
       const postNodeStatus = await this.environmentService.getEnvironmentStatus();
-      if (!postNodeStatus.nodeInstalled || !postNodeStatus.npmInstalled) {
+      if (!postNodeStatus.wslReady || !postNodeStatus.nodeInstalled || !postNodeStatus.npmInstalled || !postNodeStatus.brewInstalled) {
         return this.saveState(
           {
-            stage: "failed",
+            stage: rebootRequired ? "awaiting_reboot" : "failed",
             requiresReboot: rebootRequired,
             message: rebootRequired
-              ? "Node.js install requested a restart. Restart Windows, then run guided setup again."
-              : "Node.js install completed but runtime is not detected. Restart Windows and retry guided setup."
+              ? "WSL setup requested a restart. Restart Windows, then continue setup."
+              : "WSL/runtime install completed but requirements are still missing. Retry setup."
           },
-          "error"
+          rebootRequired ? "warning" : "error"
         );
       }
 
-      this.emitProgress("installing_node", "Node.js runtime is ready.");
+      this.emitProgress("installing_runtime", "WSL runtime is ready (Node, npm, Homebrew).");
     }
 
     return this.continueOpenClawSetup();
@@ -92,7 +97,7 @@ export class SetupOrchestrator extends EventEmitter {
     await this.saveState({
       stage: "starting_gateway",
       requiresReboot: false,
-      message: "Finalizing onboarding and verifying gateway."
+      message: "Finalizing onboarding and verifying gateway in WSL."
     });
 
     const startResult = await this.environmentService.gatewayStartStreaming((line, stream) => {
@@ -101,25 +106,25 @@ export class SetupOrchestrator extends EventEmitter {
 
     if (!startResult.ok) {
       return this.saveState(
-        {
-          stage: "failed",
-          requiresReboot: false,
-          message: "Gateway start failed after onboarding. Retry Start Gateway and finish again."
-        },
-        "error"
-      );
+          {
+            stage: "failed",
+            requiresReboot: false,
+            message: "Gateway start failed after onboarding. Retry Start Gateway and finish again."
+          },
+          "error"
+        );
     }
 
     const status = await this.environmentService.getEnvironmentStatus();
     if (!status.gatewayRunning) {
       return this.saveState(
-        {
-          stage: "ready_for_manual_step",
-          requiresReboot: false,
-          message: "Onboarding completed but gateway is not reporting healthy yet. Check Gateway Status and retry."
-        },
-        "warning"
-      );
+          {
+            stage: "ready_for_manual_step",
+            requiresReboot: false,
+            message: "Onboarding completed but gateway is not reporting healthy yet. Check Gateway Status and retry."
+          },
+          "warning"
+        );
     }
 
     return this.saveState({
@@ -132,12 +137,12 @@ export class SetupOrchestrator extends EventEmitter {
   private async continueOpenClawSetup(): Promise<SetupState> {
     const status = await this.environmentService.getEnvironmentStatus();
 
-    if (!status.nodeInstalled || !status.npmInstalled) {
+    if (!status.wslReady || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
       return this.saveState(
         {
           stage: "failed",
           requiresReboot: false,
-          message: "Node.js runtime is missing. Install Node and rerun setup."
+          message: "WSL runtime is missing (Node, npm, or Homebrew). Install WSL/runtime and rerun setup."
         },
         "error"
       );
@@ -147,7 +152,7 @@ export class SetupOrchestrator extends EventEmitter {
       await this.saveState({
         stage: "installing_openclaw",
         requiresReboot: false,
-        message: "Installing OpenClaw on Windows..."
+        message: "Installing OpenClaw in WSL..."
       });
 
       const installResult = await this.environmentService.installOpenClawStreaming((line, stream) => {
@@ -176,7 +181,7 @@ export class SetupOrchestrator extends EventEmitter {
     await this.saveState({
       stage: "starting_gateway",
       requiresReboot: false,
-      message: "Starting OpenClaw gateway for UI onboarding..."
+      message: "Starting OpenClaw gateway in WSL for UI onboarding..."
     });
 
     const startResult = await this.environmentService.gatewayStartStreaming((line, stream) => {

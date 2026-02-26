@@ -6,7 +6,7 @@ const fs = require("node:fs/promises");
 
 const { SetupStore } = require("../dist/main/services/setup-store.js");
 
-test("SetupStore migrates legacy WSL stages to failed native state", async () => {
+test("SetupStore preserves WSL stages and messages", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-setup-store-"));
 
   try {
@@ -15,9 +15,9 @@ test("SetupStore migrates legacy WSL stages to failed native state", async () =>
       statePath,
       JSON.stringify(
         {
-          stage: "installing_wsl",
+          stage: "awaiting_reboot",
           requiresReboot: true,
-          message: "Requesting admin approval to install WSL.",
+          message: "WSL installation requires restart.",
           updatedAt: new Date().toISOString()
         },
         null,
@@ -29,10 +29,9 @@ test("SetupStore migrates legacy WSL stages to failed native state", async () =>
     const store = new SetupStore(tempRoot);
     const loaded = await store.load();
 
-    assert.equal(loaded.stage, "failed");
+    assert.equal(loaded.stage, "awaiting_reboot");
     assert.equal(loaded.requiresReboot, true);
-    assert.match(loaded.message, /legacy setup state detected/i);
-    assert.doesNotMatch(loaded.message, /wsl/i);
+    assert.equal(loaded.message, "WSL installation requires restart.");
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -47,9 +46,9 @@ test("SetupStore preserves native stages", async () => {
       statePath,
       JSON.stringify(
         {
-          stage: "installing_node",
+          stage: "installing_runtime",
           requiresReboot: false,
-          message: "Installing Node.js runtime...",
+          message: "Installing runtime dependencies in WSL...",
           updatedAt: new Date().toISOString()
         },
         null,
@@ -61,9 +60,9 @@ test("SetupStore preserves native stages", async () => {
     const store = new SetupStore(tempRoot);
     const loaded = await store.load();
 
-    assert.equal(loaded.stage, "installing_node");
+    assert.equal(loaded.stage, "installing_runtime");
     assert.equal(loaded.requiresReboot, false);
-    assert.equal(loaded.message, "Installing Node.js runtime...");
+    assert.equal(loaded.message, "Installing runtime dependencies in WSL...");
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

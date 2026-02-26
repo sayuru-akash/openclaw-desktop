@@ -13,7 +13,7 @@ import type {
   WizardStartResult,
   WizardStatusResult
 } from "../../shared/types";
-import { access, mkdir } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand, runCommandStreaming } from "./command-runner";
@@ -24,24 +24,33 @@ import {
 } from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
-const NODE_REBOOT_EXIT_CODES = [3010, 1641];
-const NODE_INSTALL_OK_EXIT_CODES = [...NODE_REBOOT_EXIT_CODES];
-const NODE_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+const WSL_REBOOT_EXIT_CODES = [3010, 1641];
+const WSL_INSTALL_OK_EXIT_CODES = [...WSL_REBOOT_EXIT_CODES];
+const WSL_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+const WSL_RUNTIME_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+const WSL_BREW_INSTALL_TIMEOUT_MS = 35 * 60 * 1000;
 const OPENCLAW_INSTALL_TIMEOUT_MS = 20 * 60 * 1000;
 const DISK_CHECK_TIMEOUT_MS = 20 * 1000;
-const NODE_MIN_FREE_BYTES = 512 * 1024 * 1024;
+const WSL_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_WSL_DISTRO = "Ubuntu";
 
 export class EnvironmentService {
   private resolvedOpenClawCommand = "";
 
   public async getEnvironmentStatus(): Promise<EnvironmentStatus> {
+    const wslDistro = this.getPreferredWslDistro();
     const status: EnvironmentStatus = {
       checkedAt: new Date().toISOString(),
       platform: process.platform,
       isWindows: process.platform === "win32",
+      wslInstalled: false,
+      wslDistro,
+      wslDistroInstalled: false,
+      wslReady: false,
       nodeInstalled: false,
       npmInstalled: false,
+      brewInstalled: false,
       openClawInstalled: false,
       gatewayRunning: false,
       notes: []
@@ -52,24 +61,46 @@ export class EnvironmentService {
       return status;
     }
 
-    const runtime = await this.getNodeRuntimeStatus();
+    const wslStatus = await this.getWslStatus();
+    status.wslInstalled = wslStatus.wslInstalled;
+    status.wslDistro = wslStatus.distro;
+    status.wslDistroInstalled = wslStatus.distroInstalled;
+    status.wslReady = wslStatus.wslInstalled && wslStatus.distroInstalled;
+
+    if (!status.wslInstalled) {
+      status.notes.push("WSL is not ready. Install WSL and Ubuntu first.");
+      return status;
+    }
+
+    if (!status.wslDistroInstalled) {
+      status.notes.push(`WSL distro ${status.wslDistro} is not installed yet.`);
+      return status;
+    }
+
+    const runtime = await this.getNodeRuntimeStatus(status.wslDistro);
     status.nodeInstalled = runtime.nodeInstalled;
     status.npmInstalled = runtime.npmInstalled;
 
     if (!status.nodeInstalled || !status.npmInstalled) {
-      status.notes.push("Node.js LTS runtime is not ready.");
+      status.notes.push("Runtime dependencies in WSL are not ready yet.");
       if (!status.nodeInstalled) {
-        status.notes.push("node command is missing.");
+        status.notes.push("node command is missing in WSL.");
       }
       if (!status.npmInstalled) {
-        status.notes.push("npm command is missing.");
+        status.notes.push("npm command is missing in WSL.");
       }
       return status;
     }
 
-    status.openClawInstalled = await this.isOpenClawAvailable();
+    status.brewInstalled = await this.isBrewAvailable(status.wslDistro);
+    if (!status.brewInstalled) {
+      status.notes.push("Homebrew is missing in WSL.");
+      return status;
+    }
+
+    status.openClawInstalled = await this.isOpenClawAvailable(status.wslDistro);
     if (!status.openClawInstalled) {
-      status.notes.push("OpenClaw CLI not found on native Windows path.");
+      status.notes.push("OpenClaw CLI not found in WSL.");
       return status;
     }
 
@@ -336,7 +367,7 @@ export class EnvironmentService {
   }
 
   public rebootRequired(result: CommandResult): boolean {
-    if (result.code !== null && NODE_REBOOT_EXIT_CODES.includes(result.code)) {
+    if (result.code !== null && WSL_REBOOT_EXIT_CODES.includes(result.code)) {
       return true;
     }
 
@@ -352,44 +383,104 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Native Node runtime setup is only available on Windows."
+        stderr: "WSL setup is only available on Windows."
       };
     }
 
-    const runtime = await this.getNodeRuntimeStatus();
-    if (runtime.nodeInstalled && runtime.npmInstalled) {
-      return {
-        ok: true,
-        code: 0,
-        stdout: "Node.js runtime already installed.",
-        stderr: ""
-      };
-    }
-
-    onLog?.("Installing Node.js LTS runtime on Windows...", "stdout");
-
-    const nodeDiskCheck = await this.ensureMinimumFreeSpace(
+    const diskCheck = await this.ensureMinimumFreeSpace(
       process.env.SystemDrive ? `${process.env.SystemDrive}\\` : "C:\\",
-      NODE_MIN_FREE_BYTES,
+      WSL_MIN_FREE_BYTES,
       onLog
     );
-    if (nodeDiskCheck) {
-      return nodeDiskCheck;
+    if (diskCheck) {
+      return diskCheck;
     }
 
-    const wingetResult = await this.installNodeWithWinget(onLog);
-    if (wingetResult.ok) {
-      return this.verifyNodeRuntimeInstalled(wingetResult, onLog);
+    const wslStatus = await this.getWslStatus();
+    const distro = wslStatus.distro;
+    let lastResult: CommandResult | null = null;
+
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled) {
+      onLog?.(`Installing WSL and distro ${distro} on Windows...`, "stdout");
+      const wslInstall = await this.installWslWithPowerShell(distro, onLog);
+      lastResult = wslInstall;
+      if (!wslInstall.ok) {
+        const detail = [wslInstall.stderr, wslInstall.stdout].filter(Boolean).join("\n").trim();
+        return {
+          ...wslInstall,
+          stderr: `${detail}\n${this.detectWslInstallFailureHint(detail)}`.trim()
+        };
+      }
+
+      const postWslStatus = await this.getWslStatus();
+      if (!postWslStatus.wslInstalled || !postWslStatus.distroInstalled) {
+        const requiresRestart = this.rebootRequired(wslInstall);
+        return {
+          ok: false,
+          code: wslInstall.code,
+          stdout: wslInstall.stdout,
+          stderr: requiresRestart
+            ? "WSL installation requested a restart. Restart Windows, open OpenClaw Desktop, and continue setup."
+            : `WSL install finished but ${distro} is still unavailable. Retry setup after restarting Windows.`
+        };
+      }
     }
 
-    onLog?.("winget install failed or unavailable. Falling back to MSI installer...", "stderr");
-
-    const msiResult = await this.installNodeWithMsiFallback(onLog);
-    if (!msiResult.ok) {
-      return this.composeNodeInstallFailure(wingetResult, msiResult);
+    const runtime = await this.getNodeRuntimeStatus(distro);
+    if (!runtime.nodeInstalled || !runtime.npmInstalled) {
+      onLog?.(`Installing runtime dependencies in WSL distro ${distro}...`, "stdout");
+      const runtimeInstall = await this.installWslRuntimeDependencies(distro, onLog);
+      lastResult = runtimeInstall;
+      if (!runtimeInstall.ok) {
+        const detail = [runtimeInstall.stderr, runtimeInstall.stdout].filter(Boolean).join("\n").trim();
+        return {
+          ...runtimeInstall,
+          stderr: `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim()
+        };
+      }
     }
 
-    return this.verifyNodeRuntimeInstalled(msiResult, onLog);
+    const finalRuntime = await this.getNodeRuntimeStatus(distro);
+    if (!finalRuntime.nodeInstalled || !finalRuntime.npmInstalled) {
+      return {
+        ok: false,
+        code: lastResult?.code ?? null,
+        stdout: lastResult?.stdout ?? "",
+        stderr: "WSL runtime install finished but node/npm are still unavailable. Open Ubuntu once, then retry setup."
+      };
+    }
+
+    const brewInstalled = await this.isBrewAvailable(distro);
+    if (!brewInstalled) {
+      onLog?.(`Installing Homebrew in WSL distro ${distro}...`, "stdout");
+      const brewInstall = await this.installWslBrew(distro, onLog);
+      lastResult = brewInstall;
+      if (!brewInstall.ok) {
+        const detail = [brewInstall.stderr, brewInstall.stdout].filter(Boolean).join("\n").trim();
+        return {
+          ...brewInstall,
+          stderr: `${detail}\n${this.detectBrewInstallFailureHint(detail)}`.trim()
+        };
+      }
+    }
+
+    const finalBrewInstalled = await this.isBrewAvailable(distro);
+    if (!finalBrewInstalled) {
+      return {
+        ok: false,
+        code: lastResult?.code ?? null,
+        stdout: lastResult?.stdout ?? "",
+        stderr: "Runtime install finished but Homebrew is still unavailable in WSL. Open Ubuntu once and retry setup."
+      };
+    }
+
+    onLog?.(`WSL runtime is ready in distro ${distro} (Node, npm, Homebrew).`, "stdout");
+    return lastResult ?? {
+      ok: true,
+      code: 0,
+      stdout: `WSL runtime already installed in distro ${distro} (Node, npm, Homebrew).`,
+      stderr: ""
+    };
   }
 
   private async installOpenClawInternal(
@@ -400,92 +491,100 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "OpenClaw native install is only available on Windows."
+        stderr: "OpenClaw setup is only available on Windows."
       };
     }
 
-    const runtime = await this.getNodeRuntimeStatus();
+    const wslStatus = await this.getWslStatus();
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "WSL is not ready. Install WSL first."
+      };
+    }
+
+    const distro = wslStatus.distro;
+    const runtime = await this.getNodeRuntimeStatus(distro);
     if (!runtime.nodeInstalled || !runtime.npmInstalled) {
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Node.js runtime is missing. Install Node first."
+        stderr: "Runtime dependencies are missing in WSL. Install WSL runtime first."
       };
     }
 
-    const prefix = this.getManagedNpmPrefix();
-    const diskCheck = await this.ensureMinimumFreeSpace(prefix, OPENCLAW_MIN_FREE_BYTES, onLog);
-    if (diskCheck) {
-      return diskCheck;
-    }
-
-    try {
-      await mkdir(prefix, { recursive: true });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+    const brewInstalled = await this.isBrewAvailable(distro);
+    if (!brewInstalled) {
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: `Cannot prepare install directory at ${prefix}: ${detail}`
+        stderr: "Homebrew is missing in WSL. Install WSL runtime first."
       };
     }
 
-    const npmFile = this.resolveNpmCommand();
-    const npmArgs = ["install", "-g", "openclaw", "--prefix", prefix, "--no-fund", "--no-audit"];
-    onLog?.(`Installing OpenClaw to ${prefix}...`, "stdout");
+    const diskCheck = await this.ensureMinimumFreeSpace(
+      process.env.SystemDrive ? `${process.env.SystemDrive}\\` : "C:\\",
+      OPENCLAW_MIN_FREE_BYTES,
+      onLog
+    );
+    if (diskCheck) {
+      return diskCheck;
+    }
+
+    onLog?.(`Installing OpenClaw in WSL distro ${distro}...`, "stdout");
+
+    const installScript = [
+      "set -e",
+      "mkdir -p \"$HOME/.openclaw-desktop/npm\"",
+      "npm install -g openclaw --prefix \"$HOME/.openclaw-desktop/npm\" --no-fund --no-audit"
+    ].join(" && ");
 
     const result = onLog
-      ? await runCommandStreaming(npmFile, npmArgs, {
-        timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
-        env: this.buildCommandEnv(),
-        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
-      })
-      : await runCommand(npmFile, npmArgs, {
-        timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
-        env: this.buildCommandEnv()
-      });
+      ? await this.runWslBashStreaming(distro, installScript, onLog, OPENCLAW_INSTALL_TIMEOUT_MS)
+      : await this.runWslBash(distro, installScript, OPENCLAW_INSTALL_TIMEOUT_MS);
 
     if (!result.ok) {
       const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
       return {
         ...result,
-        stderr: `${detail}\nOpenClaw npm install failed. Check internet, npm registry access, disk space, and permissions.`.trim()
+        stderr: `${detail}\nOpenClaw npm install in WSL failed. Check internet, npm registry access, and WSL distro health.`.trim()
       };
     }
 
-    const openclawInstalled = await this.isOpenClawAvailable(true);
+    const openclawInstalled = await this.isOpenClawAvailable(distro, true);
     if (!openclawInstalled) {
       return {
         ok: false,
         code: result.code,
         stdout: result.stdout,
-        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected at ${this.getManagedOpenClawPath()}. Restart Windows (PATH refresh) and retry.`.trim()
+        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected in WSL PATH.`.trim()
       };
     }
 
     return result;
   }
 
-  private async installNodeWithWinget(
+  private async installWslWithPowerShell(
+    distro: string,
     onLog?: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
+    const quotedDistro = this.quoteForSingleQuotedPowerShell(distro);
     const script = [
       "$ErrorActionPreference = 'Stop'",
-      "$winget = Get-Command winget.exe -ErrorAction SilentlyContinue",
-      "if (-not $winget) { Write-Output 'winget.exe not found'; exit 127 }",
-      "Write-Output 'Attempting Node.js LTS install via winget (UAC prompt may appear)...'",
-      "$process = Start-Process -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--silent','--accept-package-agreements','--accept-source-agreements') -Verb RunAs -PassThru -Wait",
-      "Write-Output ('winget exit code: ' + $process.ExitCode)",
+      `Write-Output ('Installing WSL distro ' + ${quotedDistro} + ' (UAC prompt may appear)...')`,
+      `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('--install','-d',${quotedDistro}) -Verb RunAs -PassThru -Wait`,
+      "Write-Output ('wsl.exe exit code: ' + $process.ExitCode)",
       "exit $process.ExitCode"
     ].join("; ");
 
     if (!onLog) {
       return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
-        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
-        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
+        okExitCodes: WSL_INSTALL_OK_EXIT_CODES,
+        timeoutMs: WSL_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv()
       });
     }
@@ -494,8 +593,8 @@ export class EnvironmentService {
       "powershell.exe",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
       {
-        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
-        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
+        okExitCodes: WSL_INSTALL_OK_EXIT_CODES,
+        timeoutMs: WSL_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
         onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
@@ -503,88 +602,131 @@ export class EnvironmentService {
     );
   }
 
-  private async installNodeWithMsiFallback(
+  private async installWslRuntimeDependencies(
+    distro: string,
     onLog?: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
     const script = [
-      "$ErrorActionPreference = 'Stop'",
-      "$ProgressPreference = 'SilentlyContinue'",
-      "Write-Output 'Resolving latest Node.js LTS MSI...'",
-      "$index = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json'",
-      "$lts = $index | Where-Object { $_.lts -ne $false -and $_.files -contains 'win-x64-msi' } | Select-Object -First 1",
-      "if (-not $lts) { throw 'Could not resolve Node.js LTS release.' }",
-      "$version = $lts.version",
-      "$msiName = 'node-' + $version + '-x64.msi'",
-      "$msiUrl = 'https://nodejs.org/dist/' + $version + '/' + $msiName",
-      "$target = Join-Path $env:TEMP $msiName",
-      "Write-Output ('Downloading ' + $msiUrl)",
-      "Invoke-WebRequest -Uri $msiUrl -OutFile $target",
-      "Write-Output 'Running MSI installer (UAC prompt may appear)...'",
-      "$process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $target, '/qn', '/norestart') -Verb RunAs -PassThru -Wait",
-      "Write-Output ('MSI exit code: ' + $process.ExitCode)",
-      "exit $process.ExitCode"
-    ].join("; ");
-
-    if (!onLog) {
-      return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
-        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
-        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
-        env: this.buildCommandEnv()
-      });
-    }
-
-    return runCommandStreaming(
-      "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-      {
-        okExitCodes: NODE_INSTALL_OK_EXIT_CODES,
-        timeoutMs: NODE_INSTALL_TIMEOUT_MS,
-        env: this.buildCommandEnv(),
-        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
-      }
-    );
+      "set -e",
+      "export DEBIAN_FRONTEND=noninteractive",
+      "apt-get update",
+      "apt-get install -y nodejs npm ca-certificates curl file git build-essential procps"
+    ].join(" && ");
+    return onLog
+      ? this.runWslBashStreaming(distro, script, onLog, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root")
+      : this.runWslBash(distro, script, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root");
   }
 
-  private async verifyNodeRuntimeInstalled(
-    installResult: CommandResult,
+  private detectWslInstallFailureHint(output: string): string {
+    const blob = output.toLowerCase();
+    if (/cancel|1602|1223/.test(blob)) {
+      return "WSL install was cancelled. Accept the UAC prompt and retry.";
+    }
+    if (/restart|reboot|3010|1641/.test(blob)) {
+      return "Windows restart is required. Restart the PC, then continue onboarding.";
+    }
+    if (/virtual machine platform|hyper-v|required feature/i.test(blob)) {
+      return "Required virtualization features are missing. Enable virtualization in BIOS and retry.";
+    }
+    if (/access is denied|permission|administrator|policy/.test(blob)) {
+      return "Permissions blocked WSL install. Run with admin rights or contact IT admin.";
+    }
+    return "Retry WSL install. If it keeps failing, install WSL manually (`wsl --install -d Ubuntu`) and reopen the app.";
+  }
+
+  private detectRuntimeInstallFailureHint(output: string): string {
+    const blob = output.toLowerCase();
+    if (/temporary failure resolving|could not resolve|network|timed out|timeout/.test(blob)) {
+      return "Network issue detected while installing runtime packages in WSL.";
+    }
+    if (/dpkg was interrupted|apt --fix-broken/.test(blob)) {
+      return "WSL package manager is in a broken state. Run apt repair in Ubuntu and retry.";
+    }
+    return "Runtime install in WSL failed. Open Ubuntu once to finish distro initialization, then retry.";
+  }
+
+  private detectBrewInstallFailureHint(output: string): string {
+    const blob = output.toLowerCase();
+    if (/network|timed out|timeout|could not resolve|failed to connect/.test(blob)) {
+      return "Network issue detected while installing Homebrew in WSL.";
+    }
+    if (/sudo|permission denied|operation not permitted/.test(blob)) {
+      return "Homebrew installer was blocked by permissions. Ensure the WSL user is configured normally and retry.";
+    }
+    return "Homebrew install in WSL failed. Open Ubuntu, run the Homebrew installer once manually, then retry setup.";
+  }
+
+  private async getWslStatus(): Promise<{ wslInstalled: boolean; distroInstalled: boolean; distro: string }> {
+    const distro = this.getPreferredWslDistro();
+
+    if (process.platform !== "win32") {
+      return { wslInstalled: false, distroInstalled: false, distro };
+    }
+
+    const list = await runCommand("wsl.exe", ["-l", "-q"], {
+      okExitCodes: [1],
+      timeoutMs: 20_000,
+      env: this.buildCommandEnv()
+    });
+
+    const merged = `${list.stdout}\n${list.stderr}`.toLowerCase();
+    if (!list.ok && list.code === null && /enoent|not recognized/.test(merged)) {
+      return { wslInstalled: false, distroInstalled: false, distro };
+    }
+
+    const distributions = list.stdout
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\u0000/g, "").trim())
+      .filter(Boolean);
+
+    if (distributions.length === 0 && /no installed distributions/.test(merged)) {
+      return { wslInstalled: true, distroInstalled: false, distro };
+    }
+
+    const distroInstalled = distributions.some((value) => value.toLowerCase() === distro.toLowerCase());
+    return { wslInstalled: true, distroInstalled, distro };
+  }
+
+  private getPreferredWslDistro(): string {
+    return (process.env.OPENCLAW_WSL_DISTRO || DEFAULT_WSL_DISTRO).trim() || DEFAULT_WSL_DISTRO;
+  }
+
+  private async installWslBrew(
+    distro: string,
     onLog?: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
-    if (!installResult.ok) {
-      return installResult;
-    }
+    const script = [
+      "set -e",
+      "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
+      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; brew --version; exit 0; fi",
+      "export NONINTERACTIVE=1",
+      "export CI=1",
+      "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi",
+      "brew --version"
+    ].join(" && ");
 
-    const runtime = await this.getNodeRuntimeStatus();
-    if (runtime.nodeInstalled && runtime.npmInstalled) {
-      onLog?.("Node.js runtime is ready.", "stdout");
-      return installResult;
-    }
-
-    const detectedInInstallPath = await this.isNodeInstalledInWellKnownPaths();
-    if (detectedInInstallPath) {
-      return {
-        ok: false,
-        code: installResult.code ?? 3010,
-        stdout: installResult.stdout,
-        stderr: `${installResult.stderr}\nNode.js appears installed, but PATH is not refreshed yet. Restart Windows and run guided setup again.`.trim()
-      };
-    }
-
-    return {
-      ok: false,
-      code: installResult.code,
-      stdout: installResult.stdout,
-      stderr: `${installResult.stderr}\nNode.js install completed but node/npm are still unavailable. Restart Windows and retry. If it still fails, install Node.js LTS manually from nodejs.org and rerun setup.`.trim()
-    };
+    return onLog
+      ? this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS)
+      : this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS);
   }
 
-  private async getNodeRuntimeStatus(): Promise<{ nodeInstalled: boolean; npmInstalled: boolean }> {
-    const nodeCheck = await runCommand(this.resolveNodeCommand(), ["--version"], { env: this.buildCommandEnv() });
-    const npmCheck = await runCommand(this.resolveNpmCommand(), ["--version"], { env: this.buildCommandEnv() });
+  private async getNodeRuntimeStatus(distro: string): Promise<{ nodeInstalled: boolean; npmInstalled: boolean }> {
+    const nodeCheck = await this.runWslBash(distro, "node --version", 20_000);
+    const npmCheck = await this.runWslBash(distro, "npm --version", 20_000);
     return {
       nodeInstalled: nodeCheck.ok,
       npmInstalled: npmCheck.ok
     };
+  }
+
+  private async isBrewAvailable(distro: string): Promise<boolean> {
+    const check = await this.runWslBash(
+      distro,
+      "if command -v brew >/dev/null 2>&1; then brew --version; elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; brew --version; else exit 1; fi",
+      20_000
+    );
+    return check.ok;
   }
 
   private async readChannelStatus(channel: ManagedChannel): Promise<ChannelStatusItem> {
@@ -605,9 +747,13 @@ export class EnvironmentService {
   }
 
   private getAlwaysOnTaskAction(): string {
-    const openclawPath = this.getManagedOpenClawPath();
-    const command = this.quoteForSingleQuotedPowerShell(openclawPath);
-    const script = `if (Test-Path ${command}) { & ${command} gateway start *> $null } else { openclaw gateway start *> $null }`;
+    const distro = this.quoteForSingleQuotedPowerShell(this.getPreferredWslDistro());
+    const script = [
+      "$ErrorActionPreference = 'SilentlyContinue'",
+      `$distro = ${distro}`,
+      "$cmd = 'if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start >/dev/null 2>&1'",
+      "wsl.exe -d $distro -- bash -lc $cmd"
+    ].join("; ");
     const escapedScript = script.replace(/"/g, '\\"');
     return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "${escapedScript}"`;
   }
@@ -636,6 +782,13 @@ export class EnvironmentService {
   }
 
   private async runOpenClaw(args: string[]): Promise<CommandResult> {
+    if (process.platform === "win32") {
+      const wslStatus = await this.getWslStatus();
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled) {
+        return this.runOpenClawInWsl(wslStatus.distro, args);
+      }
+    }
+
     const command = await this.resolveOpenClawCommand();
     return runCommand(command, args, { env: this.buildCommandEnv() });
   }
@@ -644,6 +797,13 @@ export class EnvironmentService {
     args: string[],
     onLog: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
+    if (process.platform === "win32") {
+      const wslStatus = await this.getWslStatus();
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled) {
+        return this.runOpenClawInWslStreaming(wslStatus.distro, args, onLog);
+      }
+    }
+
     const command = await this.resolveOpenClawCommand();
     return runCommandStreaming(command, args, {
       env: this.buildCommandEnv(),
@@ -652,9 +812,17 @@ export class EnvironmentService {
     });
   }
 
-  private async isOpenClawAvailable(clearCache = false): Promise<boolean> {
+  private async isOpenClawAvailable(distro?: string, clearCache = false): Promise<boolean> {
     if (clearCache) {
       this.resolvedOpenClawCommand = "";
+    }
+
+    if (process.platform === "win32") {
+      const activeDistro = distro || this.getPreferredWslDistro();
+      const result = await this.runOpenClawInWsl(activeDistro, ["--version"]);
+      if (result.ok) {
+        return true;
+      }
     }
 
     try {
@@ -663,6 +831,31 @@ export class EnvironmentService {
     } catch {
       return false;
     }
+  }
+
+  private runOpenClawInWsl(distro: string, args: string[]): Promise<CommandResult> {
+    const command = this.buildWslOpenClawCommand(args);
+    return this.runWslBash(distro, command, OPENCLAW_INSTALL_TIMEOUT_MS);
+  }
+
+  private runOpenClawInWslStreaming(
+    distro: string,
+    args: string[],
+    onLog: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const command = this.buildWslOpenClawCommand(args);
+    return this.runWslBashStreaming(distro, command, onLog, OPENCLAW_INSTALL_TIMEOUT_MS);
+  }
+
+  private buildWslOpenClawCommand(args: string[]): string {
+    const quotedArgs = args.map((arg) => this.quoteForBash(arg)).join(" ");
+    return [
+      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi",
+      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
+      "OPENCLAW_CMD=\"$HOME/.openclaw-desktop/npm/bin/openclaw\"",
+      "if [ ! -x \"$OPENCLAW_CMD\" ]; then OPENCLAW_CMD=\"openclaw\"; fi",
+      quotedArgs ? `$OPENCLAW_CMD ${quotedArgs}` : "$OPENCLAW_CMD"
+    ].join("; ");
   }
 
   private async resolveOpenClawCommand(): Promise<string> {
@@ -694,6 +887,43 @@ export class EnvironmentService {
     }
 
     return [managed, "openclaw"];
+  }
+
+  private runWslBash(
+    distro: string,
+    command: string,
+    timeoutMs: number,
+    user?: string
+  ): Promise<CommandResult> {
+    const args = ["-d", distro];
+    if (user) {
+      args.push("-u", user);
+    }
+    args.push("--", "bash", "-lc", command);
+    return runCommand("wsl.exe", args, {
+      timeoutMs,
+      env: this.buildCommandEnv()
+    });
+  }
+
+  private runWslBashStreaming(
+    distro: string,
+    command: string,
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
+    timeoutMs: number,
+    user?: string
+  ): Promise<CommandResult> {
+    const args = ["-d", distro];
+    if (user) {
+      args.push("-u", user);
+    }
+    args.push("--", "bash", "-lc", command);
+    return runCommandStreaming("wsl.exe", args, {
+      timeoutMs,
+      env: this.buildCommandEnv(),
+      onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+      onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+    });
   }
 
   private buildCommandEnv(): NodeJS.ProcessEnv {
@@ -872,6 +1102,10 @@ export class EnvironmentService {
 
   private quoteForSingleQuotedPowerShell(value: string): string {
     return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  private quoteForBash(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
   }
 
   private async fileExists(filePath: string): Promise<boolean> {
