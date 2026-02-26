@@ -54,13 +54,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.13.8",
-    "@types/pg": "^8.16.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.24",
     "cross-env": "^7.0.3",
-    "drizzle-kit": "^0.31.9",
     "electron": "^35.0.0",
     "electron-builder": "^25.1.8",
     "postcss": "^8.5.6",
@@ -74,13 +72,10 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.45.1",
     "electron-updater": "^6.6.2",
     "lucide-react": "^0.575.0",
-    "pg": "^8.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tailwind-merge": "^3.5.0",
-    "vercel": "^50.22.1"
+    "tailwind-merge": "^3.5.0"
   }
 }

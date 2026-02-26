@@ -699,10 +699,20 @@ export class EnvironmentService {
   private buildCommandEnv(): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
     const prefix = this.getManagedNpmPrefix();
-    const pathKey = process.platform === "win32" ? "Path" : "PATH";
-    const currentPath = env[pathKey] || env.PATH || "";
-    env[pathKey] = [prefix, currentPath].filter(Boolean).join(path.delimiter);
-    env.PATH = env[pathKey];
+
+    if (process.platform === "win32") {
+      // Windows env vars are case-insensitive, but Node's process.env object
+      // can contain both "Path" and "PATH". Consolidate to a single key to
+      // avoid confusing tools that do case-sensitive lookups.
+      const currentPath = env.Path || env.PATH || "";
+      delete env.Path;
+      delete env.PATH;
+      env.Path = [prefix, currentPath].filter(Boolean).join(path.delimiter);
+    } else {
+      const currentPath = env.PATH || "";
+      env.PATH = [prefix, currentPath].filter(Boolean).join(path.delimiter);
+    }
+
     return env;
   }
 

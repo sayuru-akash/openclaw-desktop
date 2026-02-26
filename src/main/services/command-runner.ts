@@ -1,5 +1,37 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import type { CommandResult } from "../../shared/types";
+
+const GRACEFUL_KILL_GRACE_MS = 3000;
+
+/**
+ * On Windows, child.kill('SIGTERM') calls TerminateProcess which is a hard kill
+ * with no chance for graceful shutdown. This helper uses taskkill without /F first
+ * (which sends WM_CLOSE), then force-kills after a grace period if still alive.
+ */
+function killChildGracefully(child: ChildProcess, signal: NodeJS.Signals | number): void {
+  if (process.platform !== "win32" || !child.pid) {
+    child.kill(signal);
+    return;
+  }
+
+  const pid = child.pid;
+  execFile("taskkill.exe", ["/PID", String(pid)], (error) => {
+    if (error) {
+      // Graceful kill failed (process may not accept WM_CLOSE); force-kill
+      child.kill("SIGKILL");
+      return;
+    }
+    // Give the process a grace period to exit cleanly, then force-kill
+    setTimeout(() => {
+      try {
+        process.kill(pid, 0); // throws if process already exited
+        execFile("taskkill.exe", ["/F", "/PID", String(pid)], () => {});
+      } catch {
+        // Process already exited — nothing to do
+      }
+    }, GRACEFUL_KILL_GRACE_MS);
+  });
+}
 
 interface RunCommandOptions {
   okExitCodes?: number[];
@@ -14,13 +46,21 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 export function runCommand(file: string, args: string[] = [], options: RunCommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve) => {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    execFile(file, args, {
+    const killSignal = options.killSignal ?? "SIGTERM";
+    const useManualTimeout = process.platform === "win32";
+
+    const child = execFile(file, args, {
       encoding: "utf8",
       cwd: options.cwd,
       env: options.env,
-      timeout: timeoutMs,
-      killSignal: options.killSignal ?? "SIGTERM"
+      // On Windows, the built-in timeout uses TerminateProcess (hard kill).
+      // We handle timeout manually so we can use graceful shutdown instead.
+      timeout: useManualTimeout ? 0 : timeoutMs,
+      killSignal: useManualTimeout ? undefined : killSignal
     }, (error, stdout, stderr) => {
+      if (manualTimeout) {
+        clearTimeout(manualTimeout);
+      }
       const normalizedStdout = stdout ?? "";
       const normalizedStderr = stderr ?? "";
       const okExitCodes = new Set([0, ...(options.okExitCodes ?? [])]);
@@ -43,7 +83,7 @@ export function runCommand(file: string, args: string[] = [], options: RunComman
           ok: false,
           code,
           stdout: normalizedStdout,
-          stderr: normalizedStderr || (error.killed
+          stderr: normalizedStderr || (error.killed || manualTimedOut
             ? `Command timed out after ${Math.round(timeoutMs / 1000)} seconds.`
             : error.message)
         });
@@ -52,6 +92,14 @@ export function runCommand(file: string, args: string[] = [], options: RunComman
 
       resolve({ ok: true, code: 0, stdout: normalizedStdout, stderr: normalizedStderr });
     });
+
+    let manualTimedOut = false;
+    const manualTimeout = useManualTimeout
+      ? setTimeout(() => {
+          manualTimedOut = true;
+          killChildGracefully(child, killSignal);
+        }, timeoutMs)
+      : null;
   });
 }
 
@@ -82,7 +130,7 @@ export function runCommandStreaming(
 
     const timeout = setTimeout(() => {
       timedOut = true;
-      child.kill(killSignal);
+      killChildGracefully(child, killSignal);
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {

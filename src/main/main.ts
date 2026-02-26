@@ -548,7 +548,15 @@ function createTray(): void {
     return;
   }
 
-  tray = new Tray(buildTrayIcon());
+  try {
+    tray = new Tray(buildTrayIcon());
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[tray] failed to create system tray: ${detail}`);
+    tray = null;
+    return;
+  }
+
   tray.setToolTip("OpenClaw Desktop - Gateway Unknown");
   tray.setContextMenu(buildTrayMenu());
 
@@ -746,12 +754,15 @@ app.on("second-instance", (_event, argv) => {
   showMainWindow();
 });
 
-app.on("open-url", (event, url) => {
-  event.preventDefault();
-  if (/^openclawdesktop:\/\//i.test(url)) {
-    handleProtocolOpen(url);
-  }
-});
+// open-url is macOS-only. On Windows, protocol URLs arrive via second-instance + process.argv.
+if (process.platform === "darwin") {
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    if (/^openclawdesktop:\/\//i.test(url)) {
+      handleProtocolOpen(url);
+    }
+  });
+}
 
 if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
@@ -802,7 +813,12 @@ app.on("before-quit", () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin" && isQuitting) {
+  if (process.platform === "darwin") {
+    return;
+  }
+  // Quit if the user requested it, or if the tray failed to create
+  // (otherwise the app becomes impossible to exit).
+  if (isQuitting || !tray || tray.isDestroyed()) {
     app.quit();
   }
 });
