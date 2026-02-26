@@ -29,6 +29,7 @@ const api: RendererApi = {
   installDownloadedUpdate: () => ipcRenderer.invoke("update:install"),
   installNodeRuntime: () => ipcRenderer.invoke("env:install-node"),
   installNodeRuntimeStreaming: () => ipcRenderer.invoke("env:install-node-stream"),
+  openWslUserSetup: () => ipcRenderer.invoke("env:open-wsl-user-setup"),
   restartComputer: () => ipcRenderer.invoke("env:restart-computer"),
   installOpenClaw: () => ipcRenderer.invoke("env:install-openclaw"),
   installOpenClawStreaming: () => ipcRenderer.invoke("env:install-openclaw-stream"),

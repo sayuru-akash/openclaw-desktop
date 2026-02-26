@@ -592,6 +592,9 @@ function setupStageLabel(stage) {
   if (stage === "awaiting_reboot") {
     return "Awaiting Restart";
   }
+  if (stage === "awaiting_wsl_user_setup") {
+    return "Awaiting Ubuntu User";
+  }
   if (stage === "installing_openclaw") {
     return "Installing OpenClaw";
   }
@@ -672,7 +675,9 @@ function updateOnboardingUiFromState() {
     onboardingElements.nodeStatus.textContent = "This onboarding flow requires Windows.";
   } else if (setupState && setupState.requiresReboot) {
     onboardingElements.nodeStatus.textContent = "Restart required after WSL setup. Restart Windows, then recheck.";
-  } else if (status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled) {
+  } else if (status.wslReady && !status.wslUserConfigured) {
+    onboardingElements.nodeStatus.textContent = "Ubuntu account setup is incomplete. Open Ubuntu, create username/password, then recheck.";
+  } else if (status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled) {
     onboardingElements.nodeStatus.textContent = "WSL runtime is ready (Node, npm, Homebrew).";
   } else if (status.wslInstalled && !status.wslDistroInstalled) {
     onboardingElements.nodeStatus.textContent = "WSL is installed, but Ubuntu distro is missing.";
@@ -720,7 +725,7 @@ function updateOnboardingUiFromState() {
     ? `Current: ${modelProvider} / ${modelName}`
     : "Set provider, model, and API key.";
 
-  onboardingElements.continueOpenClaw.disabled = !(status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
+  onboardingElements.continueOpenClaw.disabled = !(status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
   onboardingElements.continueGateway.disabled = !status.openClawInstalled;
   onboardingElements.continueModel.disabled = !status.gatewayRunning;
   onboardingElements.continueDone.disabled = !(modelProvider && modelName);
@@ -728,7 +733,7 @@ function updateOnboardingUiFromState() {
 
 function getSuggestedOnboardingStep() {
   const status = lastEnvironmentStatus;
-  if (!status || !status.isWindows || !status.wslReady || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
+  if (!status || !status.isWindows || !status.wslReady || !status.wslUserConfigured || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
     return "node";
   }
 
@@ -916,8 +921,8 @@ function renderEnvironment(status) {
   setStatus(statusElements.npm, status.npmInstalled ? "Installed" : "Missing", status.npmInstalled ? "ok" : "warn");
   setStatus(
     statusElements.runtime,
-    status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "Ready" : "Needs setup",
-    status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "ok" : "warn"
+    status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "Ready" : "Needs setup",
+    status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled ? "ok" : "warn"
   );
   setStatus(statusElements.openclaw, status.openClawInstalled ? "Installed" : "Missing", status.openClawInstalled ? "ok" : "warn");
   setStatus(statusElements.gateway, status.gatewayRunning ? "Running" : "Stopped", status.gatewayRunning ? "ok" : "warn");
@@ -1071,7 +1076,7 @@ function applyActionAvailability(status, setupState) {
 
   actionButtons.guidedSetup.disabled = !status.isWindows || inProgress;
   actionButtons.installNode.disabled = !status.isWindows || status.wslReady || inProgress;
-  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.wslReady && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
+  actionButtons.installOpenClaw.disabled = inProgress || !(status.isWindows && status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
   actionButtons.runOnboarding.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStatus.disabled = inProgress || !status.openClawInstalled;
   actionButtons.gatewayStart.disabled = inProgress || !status.openClawInstalled;
@@ -3223,7 +3228,12 @@ function wireActions() {
   });
 
   onboardingElements.continueOpenClaw.addEventListener("click", () => {
-    if (!(lastEnvironmentStatus && lastEnvironmentStatus.wslReady && lastEnvironmentStatus.nodeInstalled && lastEnvironmentStatus.npmInstalled && lastEnvironmentStatus.brewInstalled)) {
+    if (!(lastEnvironmentStatus
+      && lastEnvironmentStatus.wslReady
+      && lastEnvironmentStatus.wslUserConfigured
+      && lastEnvironmentStatus.nodeInstalled
+      && lastEnvironmentStatus.npmInstalled
+      && lastEnvironmentStatus.brewInstalled)) {
       onboardingElements.nodeStatus.textContent = "Finish WSL runtime setup before continuing.";
       return;
     }

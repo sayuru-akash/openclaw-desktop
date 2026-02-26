@@ -4,12 +4,16 @@ import type { EnvironmentService } from "./environment";
 import type { SetupStore } from "./setup-store";
 
 type SetupProgressListener = (event: SetupProgressEvent) => void;
+const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
 
 function resolveRuntimeInstallStage(
   line: string,
   fallback: SetupStage
 ): SetupStage {
   const normalized = line.toLowerCase();
+  if (/username|password|account setup|default unix user/.test(normalized)) {
+    return "awaiting_wsl_user_setup";
+  }
   if (/homebrew|\bbrew\b/.test(normalized)) {
     return "installing_homebrew";
   }
@@ -79,20 +83,34 @@ export class SetupOrchestrator extends EventEmitter {
 
       if (!nodeInstall.ok) {
         const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
+        const needsWslUserSetup = nodeInstall.stderr.includes(WSL_USER_SETUP_REQUIRED_MARKER);
         return this.saveState(
           {
-            stage: "failed",
+            stage: needsWslUserSetup ? "awaiting_wsl_user_setup" : "failed",
             requiresReboot: rebootRequired,
-            message: rebootRequired
-              ? "WSL setup requested a restart. Restart Windows and continue setup."
-              : "WSL/runtime installation failed. Check logs and retry setup."
+            message: needsWslUserSetup
+              ? "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup."
+              : rebootRequired
+                ? "WSL setup requested a restart. Restart Windows and continue setup."
+                : "WSL/runtime installation failed. Check logs and retry setup."
           },
-          "error"
+          needsWslUserSetup ? "warning" : "error"
         );
       }
 
       const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
       const postNodeStatus = await this.environmentService.getEnvironmentStatus();
+      if (!postNodeStatus.wslUserConfigured) {
+        return this.saveState(
+          {
+            stage: "awaiting_wsl_user_setup",
+            requiresReboot: false,
+            message: "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup."
+          },
+          "warning"
+        );
+      }
+
       if (!postNodeStatus.wslReady || !postNodeStatus.nodeInstalled || !postNodeStatus.npmInstalled || !postNodeStatus.brewInstalled) {
         return this.saveState(
           {
@@ -155,6 +173,17 @@ export class SetupOrchestrator extends EventEmitter {
 
   private async continueOpenClawSetup(): Promise<SetupState> {
     const status = await this.environmentService.getEnvironmentStatus();
+
+    if (!status.wslUserConfigured) {
+      return this.saveState(
+        {
+          stage: "awaiting_wsl_user_setup",
+          requiresReboot: false,
+          message: "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup."
+        },
+        "warning"
+      );
+    }
 
     if (!status.wslReady || !status.nodeInstalled || !status.npmInstalled || !status.brewInstalled) {
       return this.saveState(

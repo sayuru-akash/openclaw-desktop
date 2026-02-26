@@ -625,6 +625,9 @@ function flushPendingUpdateEvents(): void {
 
 function resolveInstallNodeStage(message: string): SetupProgressEvent["stage"] {
   const normalized = message.toLowerCase();
+  if (/username|password|account setup|default unix user/.test(normalized)) {
+    return "awaiting_wsl_user_setup";
+  }
   if (/homebrew|\bbrew\b/.test(normalized)) {
     return "installing_homebrew";
   }
@@ -674,6 +677,7 @@ function registerIpcHandlers(): void {
       });
     })
   );
+  ipcMain.handle("env:open-wsl-user-setup", () => environmentService.openWslUserSetup());
   ipcMain.handle("env:restart-computer", () => environmentService.restartComputer());
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
   ipcMain.handle("env:install-openclaw-stream", () =>

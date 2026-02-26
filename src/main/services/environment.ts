@@ -34,6 +34,7 @@ const DISK_CHECK_TIMEOUT_MS = 20 * 1000;
 const WSL_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const DEFAULT_WSL_DISTRO = "Ubuntu";
+const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
 
 export class EnvironmentService {
   private resolvedOpenClawCommand = "";
@@ -48,6 +49,7 @@ export class EnvironmentService {
       wslDistro,
       wslDistroInstalled: false,
       wslReady: false,
+      wslUserConfigured: false,
       nodeInstalled: false,
       npmInstalled: false,
       brewInstalled: false,
@@ -74,6 +76,12 @@ export class EnvironmentService {
 
     if (!status.wslDistroInstalled) {
       status.notes.push(`WSL distro ${status.wslDistro} is not installed yet.`);
+      return status;
+    }
+
+    status.wslUserConfigured = await this.isWslUserConfigured(status.wslDistro);
+    if (!status.wslUserConfigured) {
+      status.notes.push("Finish Ubuntu first-run account setup (username/password), then resume setup.");
       return status;
     }
 
@@ -120,6 +128,31 @@ export class EnvironmentService {
 
   public installNodeRuntimeStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
     return this.installNodeRuntimeInternal(onLog);
+  }
+
+  public async openWslUserSetup(): Promise<CommandResult> {
+    if (process.platform !== "win32") {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "WSL user setup is only available on Windows."
+      };
+    }
+
+    const distro = this.getPreferredWslDistro();
+    const quotedDistro = this.quoteForSingleQuotedPowerShell(distro);
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', ${quotedDistro}) -PassThru`,
+      "Write-Output ('Launched Ubuntu setup process id: ' + $process.Id)",
+      "exit 0"
+    ].join("; ");
+
+    return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+      timeoutMs: 15_000,
+      env: this.buildCommandEnv()
+    });
   }
 
   public restartComputer(): Promise<CommandResult> {
@@ -442,6 +475,18 @@ export class EnvironmentService {
       }
     }
 
+    const wslUserConfigured = await this.isWslUserConfigured(distro);
+    if (!wslUserConfigured) {
+      onLog?.("Ubuntu account setup is required (username/password).", "stderr");
+      onLog?.("Open Ubuntu setup, finish account creation, then click Resume Setup.", "stderr");
+      return {
+        ok: false,
+        code: 1001,
+        stdout: "",
+        stderr: `${WSL_USER_SETUP_REQUIRED_MARKER}: Ubuntu account setup is required. Open Ubuntu and finish username/password first.`
+      };
+    }
+
     const runtime = await this.getNodeRuntimeStatus(distro);
     if (!runtime.nodeInstalled || !runtime.npmInstalled) {
       onLog?.(`Installing runtime dependencies in WSL distro ${distro}...`, "stdout");
@@ -522,6 +567,16 @@ export class EnvironmentService {
     }
 
     const distro = wslStatus.distro;
+    const wslUserConfigured = await this.isWslUserConfigured(distro);
+    if (!wslUserConfigured) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Ubuntu account setup is incomplete. Open Ubuntu and finish username/password setup first."
+      };
+    }
+
     const runtime = await this.getNodeRuntimeStatus(distro);
     if (!runtime.nodeInstalled || !runtime.npmInstalled) {
       return {
@@ -592,7 +647,7 @@ export class EnvironmentService {
     const script = [
       "$ErrorActionPreference = 'Stop'",
       `Write-Output ('Installing WSL distro ' + ${quotedDistro} + ' (UAC prompt may appear)...')`,
-      `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('--install','-d',${quotedDistro}) -Verb RunAs -PassThru -Wait`,
+      `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('--install','-d',${quotedDistro},'--no-launch') -Verb RunAs -PassThru -Wait`,
       "Write-Output ('wsl.exe exit code: ' + $process.ExitCode)",
       "exit $process.ExitCode"
     ].join("; ");
@@ -643,6 +698,9 @@ export class EnvironmentService {
     }
     if (/virtual machine platform|hyper-v|required feature/i.test(blob)) {
       return "Required virtualization features are missing. Enable virtualization in BIOS and retry.";
+    }
+    if (/no-launch|invalid command line option|unknown option/.test(blob)) {
+      return "Your WSL version does not support --no-launch. Update WSL (`wsl --update`) and retry setup.";
     }
     if (/access is denied|permission|administrator|policy/.test(blob)) {
       return "Permissions blocked WSL install. Run with admin rights or contact IT admin.";
@@ -705,6 +763,17 @@ export class EnvironmentService {
 
   private getPreferredWslDistro(): string {
     return (process.env.OPENCLAW_WSL_DISTRO || DEFAULT_WSL_DISTRO).trim() || DEFAULT_WSL_DISTRO;
+  }
+
+  private async isWslUserConfigured(distro: string): Promise<boolean> {
+    // Run as root to avoid triggering Ubuntu first-run interactive prompts.
+    const check = await this.runWslBash(
+      distro,
+      "if getent passwd 1000 >/dev/null 2>&1; then exit 0; fi; if ls -1 /home 2>/dev/null | grep -v '^root$' | grep -q .; then exit 0; fi; exit 1",
+      15_000,
+      "root"
+    );
+    return check.ok;
   }
 
   private async installWslBrew(

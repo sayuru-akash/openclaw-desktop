@@ -10,6 +10,7 @@ export type SetupStage =
   | "checking_prereqs"
   | "installing_wsl"
   | "awaiting_reboot"
+  | "awaiting_wsl_user_setup"
   | "installing_runtime"
   | "installing_homebrew"
   | "installing_openclaw"
@@ -93,6 +94,7 @@ export interface EnvironmentStatus {
   wslDistro: string;
   wslDistroInstalled: boolean;
   wslReady: boolean;
+  wslUserConfigured: boolean;
   nodeInstalled: boolean;
   npmInstalled: boolean;
   brewInstalled: boolean;
@@ -211,6 +213,7 @@ export interface RendererApi {
   onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
   installNodeRuntime: () => Promise<CommandResult>;
   installNodeRuntimeStreaming: () => Promise<CommandResult>;
+  openWslUserSetup: () => Promise<CommandResult>;
   restartComputer: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
   installOpenClawStreaming: () => Promise<CommandResult>;

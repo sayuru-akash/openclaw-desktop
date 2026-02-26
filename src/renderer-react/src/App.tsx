@@ -151,6 +151,8 @@ function setupStageLabel(stage: SetupState["stage"]): string {
       return "Installing WSL";
     case "awaiting_reboot":
       return "Awaiting Restart";
+    case "awaiting_wsl_user_setup":
+      return "Awaiting Ubuntu User";
     case "installing_runtime":
       return "Installing Runtime";
     case "installing_homebrew":
@@ -250,13 +252,18 @@ export function App() {
   const actionProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionProgressHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rebootAutoResumeAttemptedRef = useRef(false);
+  const wslUserAutoResumeAttemptedRef = useRef(false);
 
   const runtimeReady = useMemo(() => {
     if (!environment) {
       return null;
     }
 
-    return environment.wslReady && environment.nodeInstalled && environment.npmInstalled && environment.brewInstalled;
+    return environment.wslReady
+      && environment.wslUserConfigured
+      && environment.nodeInstalled
+      && environment.npmInstalled
+      && environment.brewInstalled;
   }, [environment]);
 
   const gatewayReady = useMemo(() => {
@@ -279,6 +286,8 @@ export function App() {
   const awaitingReboot = setupState.stage === "awaiting_reboot" || setupState.requiresReboot;
   const rebootStillPending = setupState.requiresReboot && !environment?.wslReady;
   const canResumeAfterReboot = setupState.stage === "awaiting_reboot" && Boolean(environment?.wslReady);
+  const awaitingWslUserSetup = setupState.stage === "awaiting_wsl_user_setup"
+    || Boolean(environment && environment.wslReady && !environment.wslUserConfigured);
 
   const clearActionProgressTimers = useCallback(() => {
     if (actionProgressTimerRef.current) {
@@ -608,6 +617,12 @@ export function App() {
     summarizeCommandResult("Restart Windows", result, appendLog);
   }), [appendLog, runAction]);
 
+  const openWslUserSetup = useCallback(() => runAction("Open Ubuntu setup", async () => {
+    const result = await window.openclaw.openWslUserSetup();
+    summarizeCommandResult("Open Ubuntu setup", result, appendLog);
+    appendLog("Finish Ubuntu username/password in the opened terminal, then click Resume Setup.");
+  }), [appendLog, runAction]);
+
   const resumeGuidedSetup = useCallback(() => runAction("Resume setup", async () => {
     const setup = await window.openclaw.runGuidedSetup();
     setSetupState(setup);
@@ -636,6 +651,50 @@ export function App() {
       rebootAutoResumeAttemptedRef.current = false;
     }
   }, [awaitingReboot]);
+
+  useEffect(() => {
+    if (wslUserAutoResumeAttemptedRef.current) {
+      return;
+    }
+    if (!configDraft || configDraft.onboardingCompleted) {
+      return;
+    }
+    if (!awaitingWslUserSetup || !environment?.wslUserConfigured || runtimeReady === true || isBusy) {
+      return;
+    }
+
+    wslUserAutoResumeAttemptedRef.current = true;
+    appendLog("Ubuntu account setup detected. Resuming setup...");
+    void resumeGuidedSetup();
+  }, [
+    appendLog,
+    awaitingWslUserSetup,
+    configDraft,
+    environment?.wslUserConfigured,
+    isBusy,
+    resumeGuidedSetup,
+    runtimeReady
+  ]);
+
+  useEffect(() => {
+    if (!awaitingWslUserSetup) {
+      wslUserAutoResumeAttemptedRef.current = false;
+    }
+  }, [awaitingWslUserSetup]);
+
+  useEffect(() => {
+    if (!awaitingWslUserSetup || isBusy) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void refreshEnvironmentSetup();
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [awaitingWslUserSetup, isBusy, refreshEnvironmentSetup]);
 
   const installOpenClaw = () => runAction("OpenClaw install", async () => {
     const result = await window.openclaw.installOpenClaw();
@@ -1045,6 +1104,11 @@ export function App() {
               variant: toVariant(environment ? environment.wslDistroInstalled : null)
             },
             {
+              label: "Ubuntu user",
+              value: readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
+              variant: toVariant(environment ? environment.wslUserConfigured : null)
+            },
+            {
               label: "Node.js (WSL)",
               value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
               variant: toVariant(environment ? environment.nodeInstalled : null)
@@ -1083,13 +1147,21 @@ export function App() {
               <Wrench className="h-3.5 w-3.5" />
               Install WSL
             </Button>
-            <Button variant="outline" onClick={resumeGuidedSetup} disabled={isBusy || !awaitingReboot || rebootStillPending}>
+            <Button
+              variant="outline"
+              onClick={resumeGuidedSetup}
+              disabled={isBusy || !(canResumeAfterReboot || (awaitingWslUserSetup && Boolean(environment?.wslUserConfigured)))}
+            >
               <RefreshCw className="h-3.5 w-3.5" />
               Resume Setup
             </Button>
             <Button variant="outline" onClick={restartComputer} disabled={isBusy || !rebootStillPending || !environment?.isWindows}>
               <Power className="h-3.5 w-3.5" />
               Restart Windows
+            </Button>
+            <Button variant="outline" onClick={openWslUserSetup} disabled={isBusy || !awaitingWslUserSetup || !!environment?.wslUserConfigured}>
+              <Wrench className="h-3.5 w-3.5" />
+              Open Ubuntu Setup
             </Button>
             <Button onClick={installOpenClaw} disabled={isBusy || runtimeReady !== true}>
               <Bot className="h-3.5 w-3.5" />
@@ -1512,17 +1584,21 @@ export function App() {
     }
 
     if (step === "runtime") {
+      if (awaitingWslUserSetup && !environment?.wslUserConfigured) {
+        await openWslUserSetup();
+        return;
+      }
       if (rebootStillPending) {
         await restartComputer();
         return;
       }
-      if (canResumeAfterReboot && runtimeReady !== true) {
+      if ((canResumeAfterReboot || awaitingWslUserSetup) && runtimeReady !== true) {
         const ok = await resumeGuidedSetup();
         if (!ok) {
           return;
         }
         const env = await refreshEnvironmentSetup();
-        if (env.wslReady && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+        if (env.wslReady && env.wslUserConfigured && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
           advanceOnboarding();
         }
         return;
@@ -1536,7 +1612,7 @@ export function App() {
         return;
       }
       const env = await refreshEnvironmentSetup();
-      if (env.wslReady && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+      if (env.wslReady && env.wslUserConfigured && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
         advanceOnboarding();
       }
       return;
@@ -1612,10 +1688,13 @@ export function App() {
       case "welcome":
         return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
+        if (awaitingWslUserSetup && !environment?.wslUserConfigured) {
+          return "Open Ubuntu Setup";
+        }
         if (rebootStillPending) {
           return "Restart Windows";
         }
-        if (canResumeAfterReboot && runtimeReady !== true) {
+        if ((canResumeAfterReboot || awaitingWslUserSetup) && runtimeReady !== true) {
           return "Resume Setup";
         }
         return runtimeReady ? "Continue" : "Install WSL";
@@ -1711,6 +1790,11 @@ export function App() {
                       variant: toVariant(environment ? environment.wslDistroInstalled : null)
                     },
                     {
+                      label: "Ubuntu user",
+                      value: readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
+                      variant: toVariant(environment ? environment.wslUserConfigured : null)
+                    },
+                    {
                       label: "Node.js (WSL)",
                       value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
                       variant: toVariant(environment ? environment.nodeInstalled : null)
@@ -1726,12 +1810,14 @@ export function App() {
                       variant: toVariant(environment ? environment.brewInstalled : null)
                     }
                   ])}
-                  {awaitingReboot ? (
+                  {awaitingReboot || awaitingWslUserSetup ? (
                     <Card>
                       <CardContent className="pt-4 text-sm text-muted-foreground">
-                        {rebootStillPending
-                          ? "Windows restart is required to continue setup."
-                          : "Restart completed. Resume setup to continue from where you left off."}
+                        {awaitingWslUserSetup && !environment?.wslUserConfigured
+                          ? "Ubuntu account setup is required. Click Open Ubuntu Setup, create username/password, then click Resume Setup."
+                          : rebootStillPending
+                            ? "Windows restart is required to continue setup."
+                            : "Restart/setup prerequisites completed. Click Resume Setup to continue from where you left off."}
                       </CardContent>
                     </Card>
                   ) : null}
