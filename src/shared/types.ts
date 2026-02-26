@@ -11,6 +11,7 @@ export type SetupStage =
   | "installing_wsl"
   | "awaiting_reboot"
   | "installing_runtime"
+  | "installing_homebrew"
   | "installing_openclaw"
   | "running_onboarding"
   | "starting_gateway"
@@ -210,6 +211,7 @@ export interface RendererApi {
   onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
   installNodeRuntime: () => Promise<CommandResult>;
   installNodeRuntimeStreaming: () => Promise<CommandResult>;
+  restartComputer: () => Promise<CommandResult>;
   installOpenClaw: () => Promise<CommandResult>;
   installOpenClawStreaming: () => Promise<CommandResult>;
   runOnboarding: () => Promise<CommandResult>;

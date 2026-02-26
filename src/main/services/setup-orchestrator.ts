@@ -5,6 +5,23 @@ import type { SetupStore } from "./setup-store";
 
 type SetupProgressListener = (event: SetupProgressEvent) => void;
 
+function resolveRuntimeInstallStage(
+  line: string,
+  fallback: SetupStage
+): SetupStage {
+  const normalized = line.toLowerCase();
+  if (/homebrew|\bbrew\b/.test(normalized)) {
+    return "installing_homebrew";
+  }
+  if (/node|npm|runtime|apt-get|dependency|dependencies|package/.test(normalized)) {
+    return "installing_runtime";
+  }
+  if (/wsl|ubuntu|distro/.test(normalized)) {
+    return "installing_wsl";
+  }
+  return fallback;
+}
+
 export class SetupOrchestrator extends EventEmitter {
   constructor(
     private readonly environmentService: EnvironmentService,
@@ -54,8 +71,10 @@ export class SetupOrchestrator extends EventEmitter {
           : `Installing WSL (${status.wslDistro})...`
       });
 
+      let runtimeStage: SetupStage = status.wslReady ? "installing_runtime" : "installing_wsl";
       const nodeInstall = await this.environmentService.installNodeRuntimeStreaming((line, stream) => {
-        this.emitProgress(status.wslReady ? "installing_runtime" : "installing_wsl", line, stream === "stderr" ? "warning" : "info", stream);
+        runtimeStage = resolveRuntimeInstallStage(line, runtimeStage);
+        this.emitProgress(runtimeStage, line, stream === "stderr" ? "warning" : "info", stream);
       });
 
       if (!nodeInstall.ok) {

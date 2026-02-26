@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Moon,
   PanelLeft,
+  Power,
   Play,
   RefreshCw,
   Settings,
@@ -142,6 +143,36 @@ function readinessText(value: boolean | null, ok = "Ready", bad = "Missing") {
   return value ? ok : bad;
 }
 
+function setupStageLabel(stage: SetupState["stage"]): string {
+  switch (stage) {
+    case "checking_prereqs":
+      return "Checking Prereqs";
+    case "installing_wsl":
+      return "Installing WSL";
+    case "awaiting_reboot":
+      return "Awaiting Restart";
+    case "installing_runtime":
+      return "Installing Runtime";
+    case "installing_homebrew":
+      return "Installing Homebrew";
+    case "installing_openclaw":
+      return "Installing OpenClaw";
+    case "running_onboarding":
+      return "Running Onboarding";
+    case "starting_gateway":
+      return "Starting Gateway";
+    case "ready_for_manual_step":
+      return "Manual Step Needed";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Needs Attention";
+    case "idle":
+    default:
+      return "Not Started";
+  }
+}
+
 function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -218,6 +249,7 @@ export function App() {
   const chatTabSelectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const actionProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionProgressHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rebootAutoResumeAttemptedRef = useRef(false);
 
   const runtimeReady = useMemo(() => {
     if (!environment) {
@@ -244,6 +276,9 @@ export function App() {
   const isBusy = Boolean(busyAction);
   const showActionProgress = actionProgressState !== "idle";
   const onboardingLocked = Boolean(configDraft && !configDraft.onboardingCompleted);
+  const awaitingReboot = setupState.stage === "awaiting_reboot" || setupState.requiresReboot;
+  const rebootStillPending = setupState.requiresReboot && !environment?.wslReady;
+  const canResumeAfterReboot = setupState.stage === "awaiting_reboot" && Boolean(environment?.wslReady);
 
   const clearActionProgressTimers = useCallback(() => {
     if (actionProgressTimerRef.current) {
@@ -567,6 +602,40 @@ export function App() {
     summarizeCommandResult("WSL install", result, appendLog);
     await refreshAll();
   });
+
+  const restartComputer = useCallback(() => runAction("Restart Windows", async () => {
+    const result = await window.openclaw.restartComputer();
+    summarizeCommandResult("Restart Windows", result, appendLog);
+  }), [appendLog, runAction]);
+
+  const resumeGuidedSetup = useCallback(() => runAction("Resume setup", async () => {
+    const setup = await window.openclaw.runGuidedSetup();
+    setSetupState(setup);
+    appendLog(`Setup: ${setup.message}`);
+    await refreshAll();
+  }), [appendLog, refreshAll, runAction]);
+
+  useEffect(() => {
+    if (rebootAutoResumeAttemptedRef.current) {
+      return;
+    }
+    if (!configDraft || configDraft.onboardingCompleted) {
+      return;
+    }
+    if (!canResumeAfterReboot || isBusy) {
+      return;
+    }
+
+    rebootAutoResumeAttemptedRef.current = true;
+    appendLog("Restart detected. Resuming setup...");
+    void resumeGuidedSetup();
+  }, [appendLog, canResumeAfterReboot, configDraft, isBusy, resumeGuidedSetup]);
+
+  useEffect(() => {
+    if (!awaitingReboot) {
+      rebootAutoResumeAttemptedRef.current = false;
+    }
+  }, [awaitingReboot]);
 
   const installOpenClaw = () => runAction("OpenClaw install", async () => {
     const result = await window.openclaw.installOpenClaw();
@@ -1010,9 +1079,17 @@ export function App() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Button onClick={installNode} disabled={isBusy || !environment?.isWindows}>
+            <Button onClick={installNode} disabled={isBusy || !environment?.isWindows || rebootStillPending}>
               <Wrench className="h-3.5 w-3.5" />
               Install WSL
+            </Button>
+            <Button variant="outline" onClick={resumeGuidedSetup} disabled={isBusy || !awaitingReboot || rebootStillPending}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Resume Setup
+            </Button>
+            <Button variant="outline" onClick={restartComputer} disabled={isBusy || !rebootStillPending || !environment?.isWindows}>
+              <Power className="h-3.5 w-3.5" />
+              Restart Windows
             </Button>
             <Button onClick={installOpenClaw} disabled={isBusy || runtimeReady !== true}>
               <Bot className="h-3.5 w-3.5" />
@@ -1435,6 +1512,21 @@ export function App() {
     }
 
     if (step === "runtime") {
+      if (rebootStillPending) {
+        await restartComputer();
+        return;
+      }
+      if (canResumeAfterReboot && runtimeReady !== true) {
+        const ok = await resumeGuidedSetup();
+        if (!ok) {
+          return;
+        }
+        const env = await refreshEnvironmentSetup();
+        if (env.wslReady && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+          advanceOnboarding();
+        }
+        return;
+      }
       if (runtimeReady) {
         advanceOnboarding();
         return;
@@ -1444,7 +1536,7 @@ export function App() {
         return;
       }
       const env = await refreshEnvironmentSetup();
-      if (env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+      if (env.wslReady && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
         advanceOnboarding();
       }
       return;
@@ -1520,6 +1612,12 @@ export function App() {
       case "welcome":
         return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
+        if (rebootStillPending) {
+          return "Restart Windows";
+        }
+        if (canResumeAfterReboot && runtimeReady !== true) {
+          return "Resume Setup";
+        }
         return runtimeReady ? "Continue" : "Install WSL";
       case "openclaw":
         return environment?.openClawInstalled ? "Continue" : "Install OpenClaw";
@@ -1600,33 +1698,44 @@ export function App() {
               ) : null}
 
               {currentOnboardingStep.id === "runtime" ? (
-                renderStatusTable([
-                  {
-                    label: "WSL",
-                    value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.wslInstalled : null)
-                  },
-                  {
-                    label: "Ubuntu distro",
-                    value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.wslDistroInstalled : null)
-                  },
-                  {
-                    label: "Node.js (WSL)",
-                    value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.nodeInstalled : null)
-                  },
-                  {
-                    label: "npm (WSL)",
-                    value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.npmInstalled : null)
-                  },
-                  {
-                    label: "Homebrew (WSL)",
-                    value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.brewInstalled : null)
-                  }
-                ])
+                <div className="space-y-3">
+                  {renderStatusTable([
+                    {
+                      label: "WSL",
+                      value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
+                      variant: toVariant(environment ? environment.wslInstalled : null)
+                    },
+                    {
+                      label: "Ubuntu distro",
+                      value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+                      variant: toVariant(environment ? environment.wslDistroInstalled : null)
+                    },
+                    {
+                      label: "Node.js (WSL)",
+                      value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
+                      variant: toVariant(environment ? environment.nodeInstalled : null)
+                    },
+                    {
+                      label: "npm (WSL)",
+                      value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
+                      variant: toVariant(environment ? environment.npmInstalled : null)
+                    },
+                    {
+                      label: "Homebrew (WSL)",
+                      value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
+                      variant: toVariant(environment ? environment.brewInstalled : null)
+                    }
+                  ])}
+                  {awaitingReboot ? (
+                    <Card>
+                      <CardContent className="pt-4 text-sm text-muted-foreground">
+                        {rebootStillPending
+                          ? "Windows restart is required to continue setup."
+                          : "Restart completed. Resume setup to continue from where you left off."}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
               ) : null}
 
               {currentOnboardingStep.id === "openclaw" ? (
@@ -1797,7 +1906,7 @@ export function App() {
               <p className="text-xs text-muted-foreground">{workspaceDescription}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="default">{setupState.stage}</Badge>
+              <Badge variant="default">{setupStageLabel(setupState.stage)}</Badge>
               <Button
                 variant="outline"
                 className="px-2"

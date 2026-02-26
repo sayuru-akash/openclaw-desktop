@@ -586,6 +586,9 @@ function setupStageLabel(stage) {
   if (stage === "installing_runtime") {
     return "Installing Runtime";
   }
+  if (stage === "installing_homebrew") {
+    return "Installing Homebrew";
+  }
   if (stage === "awaiting_reboot") {
     return "Awaiting Restart";
   }
@@ -1059,6 +1062,7 @@ function applyActionAvailability(status, setupState) {
     "checking_prereqs",
     "installing_wsl",
     "installing_runtime",
+    "installing_homebrew",
     "installing_openclaw",
     "running_onboarding",
     "starting_gateway"

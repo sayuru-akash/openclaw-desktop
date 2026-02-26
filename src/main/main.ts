@@ -623,6 +623,20 @@ function flushPendingUpdateEvents(): void {
   pendingUpdateEvents.length = 0;
 }
 
+function resolveInstallNodeStage(message: string): SetupProgressEvent["stage"] {
+  const normalized = message.toLowerCase();
+  if (/homebrew|\bbrew\b/.test(normalized)) {
+    return "installing_homebrew";
+  }
+  if (/node|npm|runtime|apt-get|dependency|dependencies|package/.test(normalized)) {
+    return "installing_runtime";
+  }
+  if (/wsl|ubuntu|distro/.test(normalized)) {
+    return "installing_wsl";
+  }
+  return "installing_runtime";
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("env:get-status", () => environmentService.getEnvironmentStatus());
   ipcMain.handle("channels:get-status", () => environmentService.getChannelStatuses());
@@ -653,13 +667,14 @@ function registerIpcHandlers(): void {
     environmentService.installNodeRuntimeStreaming((line, stream) => {
       broadcastSetupProgress({
         timestamp: new Date().toISOString(),
-        stage: "installing_wsl",
+        stage: resolveInstallNodeStage(line),
         level: stream === "stderr" ? "warning" : "info",
         source: stream,
         message: line
       });
     })
   );
+  ipcMain.handle("env:restart-computer", () => environmentService.restartComputer());
   ipcMain.handle("env:install-openclaw", () => environmentService.installOpenClaw());
   ipcMain.handle("env:install-openclaw-stream", () =>
     environmentService.installOpenClawStreaming((line, stream) => {

@@ -122,6 +122,22 @@ export class EnvironmentService {
     return this.installNodeRuntimeInternal(onLog);
   }
 
+  public restartComputer(): Promise<CommandResult> {
+    if (process.platform !== "win32") {
+      return Promise.resolve({
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Restart command is only available on Windows."
+      });
+    }
+
+    return runCommand("shutdown.exe", ["/r", "/t", "0"], {
+      timeoutMs: 15_000,
+      env: this.buildCommandEnv()
+    });
+  }
+
   public installOpenClaw(): Promise<CommandResult> {
     return this.installOpenClawInternal();
   }

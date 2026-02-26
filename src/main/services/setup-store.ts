@@ -28,6 +28,7 @@ function normalizeStage(stage: unknown): SetupStage {
     "installing_wsl",
     "awaiting_reboot",
     "installing_runtime",
+    "installing_homebrew",
     "installing_openclaw",
     "running_onboarding",
     "starting_gateway",
