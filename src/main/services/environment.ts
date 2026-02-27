@@ -36,6 +36,13 @@ const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const DEFAULT_WSL_DISTRO = "Ubuntu";
 const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
 
+interface WslStatus {
+  wslInstalled: boolean;
+  distroInstalled: boolean;
+  distroReachable: boolean;
+  distro: string;
+}
+
 export class EnvironmentService {
   private resolvedOpenClawCommand = "";
 
@@ -67,7 +74,7 @@ export class EnvironmentService {
     status.wslInstalled = wslStatus.wslInstalled;
     status.wslDistro = wslStatus.distro;
     status.wslDistroInstalled = wslStatus.distroInstalled;
-    status.wslReady = wslStatus.wslInstalled && wslStatus.distroInstalled;
+    status.wslReady = wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable;
 
     if (!status.wslInstalled) {
       status.notes.push("WSL is not ready. Install WSL and Ubuntu first.");
@@ -76,6 +83,11 @@ export class EnvironmentService {
 
     if (!status.wslDistroInstalled) {
       status.notes.push(`WSL distro ${status.wslDistro} is not installed yet.`);
+      return status;
+    }
+
+    if (!wslStatus.distroReachable) {
+      status.notes.push(`WSL distro ${status.wslDistro} is registered but not reachable. Repair WSL and retry setup.`);
       return status;
     }
 
@@ -462,7 +474,7 @@ export class EnvironmentService {
       }
 
       const postWslStatus = await this.getWslStatus();
-      if (!postWslStatus.wslInstalled || !postWslStatus.distroInstalled) {
+      if (!postWslStatus.wslInstalled || !postWslStatus.distroInstalled || !postWslStatus.distroReachable) {
         const requiresRestart = this.rebootRequired(wslInstall);
         return {
           ok: false,
@@ -471,6 +483,22 @@ export class EnvironmentService {
           stderr: requiresRestart
             ? "WSL installation requested a restart. Restart Windows, open OpenClaw Desktop, and continue setup."
             : `WSL install finished but ${distro} is still unavailable. Retry setup after restarting Windows.`
+        };
+      }
+    } else if (!wslStatus.distroReachable) {
+      onLog?.(`WSL distro ${distro} is installed but not reachable. Restarting WSL service...`, "stderr");
+      await runCommand("wsl.exe", ["--shutdown"], {
+        okExitCodes: [0, 1],
+        timeoutMs: 20_000,
+        env: this.buildCommandEnv()
+      });
+      const retryStatus = await this.getWslStatus();
+      if (!retryStatus.distroReachable) {
+        return {
+          ok: false,
+          code: null,
+          stdout: "",
+          stderr: `WSL distro ${distro} is registered but cannot be launched. Reinstall/repair WSL and retry setup.`
         };
       }
     }
@@ -557,12 +585,12 @@ export class EnvironmentService {
     }
 
     const wslStatus = await this.getWslStatus();
-    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled) {
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "WSL is not ready. Install WSL first."
+        stderr: "WSL is not ready. Install/repair WSL first."
       };
     }
 
@@ -730,11 +758,11 @@ export class EnvironmentService {
     return "Homebrew install in WSL failed. Open Ubuntu, run the Homebrew installer once manually, then retry setup.";
   }
 
-  private async getWslStatus(): Promise<{ wslInstalled: boolean; distroInstalled: boolean; distro: string }> {
+  private async getWslStatus(): Promise<WslStatus> {
     const distro = this.getPreferredWslDistro();
 
     if (process.platform !== "win32") {
-      return { wslInstalled: false, distroInstalled: false, distro };
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
     }
 
     const list = await runCommand("wsl.exe", ["-l", "-q"], {
@@ -744,8 +772,12 @@ export class EnvironmentService {
     });
 
     const merged = `${list.stdout}\n${list.stderr}`.toLowerCase();
-    if (!list.ok && list.code === null && /enoent|not recognized/.test(merged)) {
-      return { wslInstalled: false, distroInstalled: false, distro };
+    if (this.isWslCommandMissingOutput(merged)) {
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
+    }
+
+    if (this.isWslFeatureDisabledOutput(merged)) {
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
     }
 
     const distributions = list.stdout
@@ -753,12 +785,42 @@ export class EnvironmentService {
       .map((line) => line.replace(/\u0000/g, "").trim())
       .filter(Boolean);
 
-    if (distributions.length === 0 && /no installed distributions/.test(merged)) {
-      return { wslInstalled: true, distroInstalled: false, distro };
+    if (distributions.length === 0 && this.isNoInstalledDistrosOutput(merged)) {
+      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro };
     }
 
     const distroInstalled = distributions.some((value) => value.toLowerCase() === distro.toLowerCase());
-    return { wslInstalled: true, distroInstalled, distro };
+    if (!distroInstalled) {
+      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro };
+    }
+
+    const distroReachable = await this.canLaunchWslDistroAsRoot(distro);
+    return { wslInstalled: true, distroInstalled: true, distroReachable, distro };
+  }
+
+  private isWslCommandMissingOutput(blob: string): boolean {
+    return /enoent|not recognized/.test(blob);
+  }
+
+  private isWslFeatureDisabledOutput(blob: string): boolean {
+    return /optional component.*not enabled|windows subsystem for linux has not been enabled|virtual machine platform.*not enabled|enable.*virtual machine platform/.test(blob);
+  }
+
+  private isNoInstalledDistrosOutput(blob: string): boolean {
+    return /no installed distributions/.test(blob);
+  }
+
+  private async canLaunchWslDistroAsRoot(distro: string): Promise<boolean> {
+    const probe = await runCommand(
+      "wsl.exe",
+      ["-d", distro, "-u", "root", "--", "/bin/sh", "-lc", "exit 0"],
+      {
+        timeoutMs: 20_000,
+        env: this.buildCommandEnv()
+      }
+    );
+
+    return probe.ok;
   }
 
   private getPreferredWslDistro(): string {
@@ -869,7 +931,7 @@ export class EnvironmentService {
   private async runOpenClaw(args: string[]): Promise<CommandResult> {
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled) {
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
         return this.runOpenClawInWsl(wslStatus.distro, args);
       }
     }
@@ -884,7 +946,7 @@ export class EnvironmentService {
   ): Promise<CommandResult> {
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled) {
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
         return this.runOpenClawInWslStreaming(wslStatus.distro, args, onLog);
       }
     }
