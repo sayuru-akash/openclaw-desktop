@@ -266,6 +266,25 @@ export function App() {
       && environment.brewInstalled;
   }, [environment]);
 
+  const runtimeInstallActionLabel = useMemo(() => {
+    if (!environment) {
+      return "Install WSL";
+    }
+    if (!environment.wslInstalled) {
+      return "Install WSL";
+    }
+    if (!environment.wslDistroInstalled) {
+      return `Install ${environment.wslDistro || "Ubuntu"}`;
+    }
+    if (!environment.wslReady) {
+      return "Repair WSL";
+    }
+    if (!environment.nodeInstalled || !environment.npmInstalled || !environment.brewInstalled) {
+      return "Install WSL Runtime";
+    }
+    return "Repair WSL Runtime";
+  }, [environment]);
+
   const gatewayReady = useMemo(() => {
     if (!environment) {
       return null;
@@ -1145,7 +1164,7 @@ export function App() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Button onClick={installNode} disabled={isBusy || !environment?.isWindows || rebootStillPending}>
               <Wrench className="h-3.5 w-3.5" />
-              Install WSL
+              {runtimeInstallActionLabel}
             </Button>
             <Button
               variant="outline"
@@ -1697,7 +1716,7 @@ export function App() {
         if ((canResumeAfterReboot || awaitingWslUserSetup) && runtimeReady !== true) {
           return "Resume Setup";
         }
-        return runtimeReady ? "Continue" : "Install WSL";
+        return runtimeReady ? "Continue" : runtimeInstallActionLabel;
       case "openclaw":
         return environment?.openClawInstalled ? "Continue" : "Install OpenClaw";
       case "gateway":

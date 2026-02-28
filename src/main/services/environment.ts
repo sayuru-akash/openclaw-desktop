@@ -152,12 +152,13 @@ export class EnvironmentService {
       };
     }
 
-    const distro = this.getPreferredWslDistro();
+    const wslStatus = await this.getWslStatus();
+    const distro = wslStatus.distroInstalled ? wslStatus.distro : this.getPreferredWslDistro();
     const quotedDistro = this.quoteForSingleQuotedPowerShell(distro);
     const script = [
       "$ErrorActionPreference = 'Stop'",
       `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', ${quotedDistro}) -PassThru`,
-      "Write-Output ('Launched Ubuntu setup process id: ' + $process.Id)",
+      "Write-Output ('Launched WSL setup process id: ' + $process.Id)",
       "exit 0"
     ].join("; ");
 
@@ -759,10 +760,10 @@ export class EnvironmentService {
   }
 
   private async getWslStatus(): Promise<WslStatus> {
-    const distro = this.getPreferredWslDistro();
+    const preferredDistro = this.getPreferredWslDistro();
 
     if (process.platform !== "win32") {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const list = await runCommand("wsl.exe", ["-l", "-q"], {
@@ -773,11 +774,11 @@ export class EnvironmentService {
 
     const merged = `${list.stdout}\n${list.stderr}`.toLowerCase();
     if (this.isWslCommandMissingOutput(merged)) {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     if (this.isWslFeatureDisabledOutput(merged)) {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro };
+      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const distributions = list.stdout
@@ -786,16 +787,39 @@ export class EnvironmentService {
       .filter(Boolean);
 
     if (distributions.length === 0 && this.isNoInstalledDistrosOutput(merged)) {
-      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro };
+      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
-    const distroInstalled = distributions.some((value) => value.toLowerCase() === distro.toLowerCase());
-    if (!distroInstalled) {
-      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro };
+    const resolvedDistro = this.resolveInstalledDistro(preferredDistro, distributions);
+    if (!resolvedDistro) {
+      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
-    const distroReachable = await this.canLaunchWslDistroAsRoot(distro);
-    return { wslInstalled: true, distroInstalled: true, distroReachable, distro };
+    const distroReachable = await this.canLaunchWslDistroAsRoot(resolvedDistro);
+    return { wslInstalled: true, distroInstalled: true, distroReachable, distro: resolvedDistro };
+  }
+
+  private resolveInstalledDistro(preferredDistro: string, installedDistros: string[]): string | null {
+    const preferred = preferredDistro.trim();
+    const exact = installedDistros.find((value) => value.toLowerCase() === preferred.toLowerCase());
+    if (exact) {
+      return exact;
+    }
+
+    // Accept Ubuntu variants when preferred distro is Ubuntu (e.g. Ubuntu-22.04, Ubuntu-24.04).
+    if (this.isUbuntuFamilyDistro(preferred)) {
+      const ubuntuCandidates = installedDistros.filter((value) => this.isUbuntuFamilyDistro(value));
+      if (ubuntuCandidates.length === 0) {
+        return null;
+      }
+      return ubuntuCandidates.find((value) => value.toLowerCase() === "ubuntu") || ubuntuCandidates[0];
+    }
+
+    return null;
+  }
+
+  private isUbuntuFamilyDistro(name: string): boolean {
+    return /^ubuntu($|[-\s])/i.test(name.trim());
   }
 
   private isWslCommandMissingOutput(blob: string): boolean {
