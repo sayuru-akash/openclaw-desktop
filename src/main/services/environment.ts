@@ -691,7 +691,8 @@ export class EnvironmentService {
       "if command -v npm >/dev/null 2>&1; then echo \"npm: $(npm --version)\"; else echo \"npm: missing\"; fi",
       "mkdir -p \"$HOME/.openclaw-desktop/npm\"",
       "npm install -g openclaw --prefix \"$HOME/.openclaw-desktop/npm\" --no-fund --no-audit",
-      "\"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version || true"
+      "if [ ! -x \"$HOME/.openclaw-desktop/npm/bin/openclaw\" ]; then echo \"openclaw binary missing after npm install\" >&2; exit 1; fi",
+      "\"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version"
     ].join(" && ");
 
     const result = onLog
@@ -777,6 +778,8 @@ export class EnvironmentService {
     const script = [
       "set -e",
       "export DEBIAN_FRONTEND=noninteractive",
+      // Recover from interrupted apt/dpkg transactions before package install.
+      "if ! dpkg --configure -a; then apt-get -f install -y; dpkg --configure -a; fi",
       "apt-get update",
       "apt-get install -y ca-certificates curl gnupg file git build-essential procps",
       "install -m 0755 -d /etc/apt/keyrings",
@@ -822,7 +825,7 @@ export class EnvironmentService {
       return "Node.js repository bootstrap failed in WSL. Check outbound HTTPS access to deb.nodesource.com and retry.";
     }
     if (/dpkg was interrupted|apt --fix-broken/.test(blob)) {
-      return "WSL package manager is in a broken state. Run apt repair in Ubuntu and retry.";
+      return "WSL package manager is in a broken state. Open Ubuntu and run: sudo dpkg --configure -a && sudo apt-get -f install -y, then retry setup.";
     }
     return "Runtime install in WSL failed. Open Ubuntu once to finish distro initialization, then retry.";
   }
@@ -1309,6 +1312,11 @@ export class EnvironmentService {
       if (result.ok) {
         return true;
       }
+
+      // Fallback: verify the app-managed install location directly.
+      if (await this.isManagedOpenClawAvailableInWsl(activeDistro)) {
+        return true;
+      }
     }
 
     try {
@@ -1337,12 +1345,14 @@ export class EnvironmentService {
 
   private buildWslOpenClawCommand(args: string[]): string {
     const quotedArgs = args.map((arg) => this.quoteForBash(arg)).join(" ");
+    const managedInvoke = quotedArgs
+      ? `"$HOME/.openclaw-desktop/npm/bin/openclaw" ${quotedArgs}`
+      : "\"$HOME/.openclaw-desktop/npm/bin/openclaw\"";
+    const pathInvoke = quotedArgs ? `openclaw ${quotedArgs}` : "openclaw";
     return [
       this.buildBrewShellenvBootstrapCommand(),
       "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
-      "OPENCLAW_CMD=\"$HOME/.openclaw-desktop/npm/bin/openclaw\"",
-      "if [ ! -x \"$OPENCLAW_CMD\" ]; then OPENCLAW_CMD=\"openclaw\"; fi",
-      quotedArgs ? `$OPENCLAW_CMD ${quotedArgs}` : "$OPENCLAW_CMD"
+      `if [ -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then ${managedInvoke}; elif command -v openclaw >/dev/null 2>&1; then ${pathInvoke}; else echo "openclaw CLI not found in WSL." >&2; exit 127; fi`
     ].join("; ");
   }
 
@@ -1409,6 +1419,24 @@ export class EnvironmentService {
     }
 
     return normalized;
+  }
+
+  private async isManagedOpenClawAvailableInWsl(distro: string): Promise<boolean> {
+    const checkScript =
+      "if [ -x \"$HOME/.openclaw-desktop/npm/bin/openclaw\" ]; then \"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version >/dev/null 2>&1; else exit 1; fi";
+
+    const defaultUserCheck = await this.runWslBash(distro, checkScript, 20_000);
+    if (defaultUserCheck.ok) {
+      return true;
+    }
+
+    const cliUser = await this.resolveWslBrewUser(distro);
+    if (!cliUser) {
+      return false;
+    }
+
+    const explicitUserCheck = await this.runWslBash(distro, checkScript, 20_000, cliUser);
+    return explicitUserCheck.ok;
   }
 
   private async resolveOpenClawCommand(): Promise<string> {
