@@ -675,6 +675,8 @@ function updateOnboardingUiFromState() {
     onboardingElements.nodeStatus.textContent = "This onboarding flow requires Windows.";
   } else if (setupState && setupState.requiresReboot) {
     onboardingElements.nodeStatus.textContent = "Restart required after WSL setup. Restart Windows, then recheck.";
+  } else if (status.wslAccessDenied) {
+    onboardingElements.nodeStatus.textContent = "WSL is installed, but distro access is denied in this session. Reopen the app in your normal user session and run wsl -l -v.";
   } else if (status.wslReady && !status.wslUserConfigured) {
     onboardingElements.nodeStatus.textContent = "Ubuntu account setup is incomplete. Open Ubuntu, create username/password, then recheck.";
   } else if (status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled) {

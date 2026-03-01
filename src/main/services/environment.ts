@@ -35,9 +35,11 @@ const WSL_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const DEFAULT_WSL_DISTRO = "Ubuntu";
 const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
+const LINUXBREW_SYSTEM_PREFIX = "/home/linuxbrew/.linuxbrew";
 
 interface WslStatus {
   wslInstalled: boolean;
+  accessDenied: boolean;
   distroInstalled: boolean;
   distroReachable: boolean;
   distro: string;
@@ -53,6 +55,7 @@ export class EnvironmentService {
       platform: process.platform,
       isWindows: process.platform === "win32",
       wslInstalled: false,
+      wslAccessDenied: false,
       wslDistro,
       wslDistroInstalled: false,
       wslReady: false,
@@ -72,12 +75,18 @@ export class EnvironmentService {
 
     const wslStatus = await this.getWslStatus();
     status.wslInstalled = wslStatus.wslInstalled;
+    status.wslAccessDenied = wslStatus.accessDenied;
     status.wslDistro = wslStatus.distro;
     status.wslDistroInstalled = wslStatus.distroInstalled;
     status.wslReady = wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable;
 
     if (!status.wslInstalled) {
       status.notes.push("WSL is not ready. Install WSL and Ubuntu first.");
+      return status;
+    }
+
+    if (status.wslAccessDenied) {
+      status.notes.push("WSL is installed but distro access is denied in this Windows session. Run OpenClaw Desktop with normal user permissions or fix WSL policy permissions.");
       return status;
     }
 
@@ -112,7 +121,7 @@ export class EnvironmentService {
       return status;
     }
 
-    status.brewInstalled = await this.isBrewAvailable(status.wslDistro);
+    status.brewInstalled = await this.isBrewAvailableForSetup(status.wslDistro);
     if (!status.brewInstalled) {
       status.notes.push("Homebrew is missing in WSL.");
       return status;
@@ -462,6 +471,16 @@ export class EnvironmentService {
     const distro = wslStatus.distro;
     let lastResult: CommandResult | null = null;
 
+    if (wslStatus.accessDenied) {
+      onLog?.("WSL distro access is denied in this Windows session (E_ACCESSDENIED).", "stderr");
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Wsl/EnumerateDistros/Service/E_ACCESSDENIED: Windows blocked WSL distro access for this session. Run OpenClaw Desktop in your normal user session, verify `wsl -l -v` works, then retry setup."
+      };
+    }
+
     if (!wslStatus.wslInstalled || !wslStatus.distroInstalled) {
       onLog?.(`Installing WSL and distro ${distro} on Windows...`, "stdout");
       const wslInstall = await this.installWslWithPowerShell(distro, onLog);
@@ -540,7 +559,7 @@ export class EnvironmentService {
       };
     }
 
-    const brewInstalled = await this.isBrewAvailable(distro);
+    const brewInstalled = await this.isBrewAvailableForSetup(distro);
     if (!brewInstalled) {
       onLog?.(`Installing Homebrew in WSL distro ${distro}...`, "stdout");
       const brewInstall = await this.installWslBrew(distro, onLog);
@@ -554,7 +573,7 @@ export class EnvironmentService {
       }
     }
 
-    const finalBrewInstalled = await this.isBrewAvailable(distro);
+    const finalBrewInstalled = await this.isBrewAvailableForSetup(distro);
     if (!finalBrewInstalled) {
       return {
         ok: false,
@@ -616,7 +635,7 @@ export class EnvironmentService {
       };
     }
 
-    const brewInstalled = await this.isBrewAvailable(distro);
+    const brewInstalled = await this.isBrewAvailableForSetup(distro);
     if (!brewInstalled) {
       return {
         ok: false,
@@ -636,22 +655,30 @@ export class EnvironmentService {
     }
 
     onLog?.(`Installing OpenClaw in WSL distro ${distro}...`, "stdout");
+    const installUser = await this.resolveWslBrewUser(distro);
+    if (installUser) {
+      onLog?.(`Using Ubuntu user ${installUser} for OpenClaw install.`, "stdout");
+    }
 
     const installScript = [
       "set -e",
+      "echo \"WSL user: $(id -un)\"",
+      "if command -v node >/dev/null 2>&1; then echo \"node: $(node --version)\"; elif command -v nodejs >/dev/null 2>&1; then echo \"nodejs: $(nodejs --version)\"; else echo \"node: missing\"; fi",
+      "if command -v npm >/dev/null 2>&1; then echo \"npm: $(npm --version)\"; else echo \"npm: missing\"; fi",
       "mkdir -p \"$HOME/.openclaw-desktop/npm\"",
-      "npm install -g openclaw --prefix \"$HOME/.openclaw-desktop/npm\" --no-fund --no-audit"
+      "npm install -g openclaw --prefix \"$HOME/.openclaw-desktop/npm\" --no-fund --no-audit",
+      "\"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version || true"
     ].join(" && ");
 
     const result = onLog
-      ? await this.runWslBashStreaming(distro, installScript, onLog, OPENCLAW_INSTALL_TIMEOUT_MS)
-      : await this.runWslBash(distro, installScript, OPENCLAW_INSTALL_TIMEOUT_MS);
+      ? await this.runWslBashStreaming(distro, installScript, onLog, OPENCLAW_INSTALL_TIMEOUT_MS, installUser || undefined)
+      : await this.runWslBash(distro, installScript, OPENCLAW_INSTALL_TIMEOUT_MS, installUser || undefined);
 
     if (!result.ok) {
       const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
       return {
         ...result,
-        stderr: `${detail}\nOpenClaw npm install in WSL failed. Check internet, npm registry access, and WSL distro health.`.trim()
+        stderr: `${detail}\n${this.detectOpenClawInstallFailureHint(detail)}`.trim()
       };
     }
 
@@ -666,6 +693,23 @@ export class EnvironmentService {
     }
 
     return result;
+  }
+
+  private detectOpenClawInstallFailureHint(output: string): string {
+    const blob = output.toLowerCase();
+    if (/eai_again|enotfound|timed out|timeout|could not resolve|failed to connect|network/.test(blob)) {
+      return "OpenClaw npm install in WSL failed due to network/registry access issues.";
+    }
+    if (/unsupported engine|notsup|requires node|ebadengine/.test(blob)) {
+      return "OpenClaw npm install failed because the WSL Node.js version is too old for this package.";
+    }
+    if (/eacces|permission denied|operation not permitted/.test(blob)) {
+      return "OpenClaw npm install failed due to filesystem permissions in WSL.";
+    }
+    if (/404|not found|no matching version/.test(blob)) {
+      return "OpenClaw npm package could not be resolved from the configured registry.";
+    }
+    return "OpenClaw npm install in WSL failed. Check npm output and WSL health, then retry.";
   }
 
   private async installWslWithPowerShell(
@@ -710,7 +754,8 @@ export class EnvironmentService {
       "set -e",
       "export DEBIAN_FRONTEND=noninteractive",
       "apt-get update",
-      "apt-get install -y nodejs npm ca-certificates curl file git build-essential procps"
+      "apt-get install -y nodejs npm ca-certificates curl file git build-essential procps",
+      "if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then ln -sf \"$(command -v nodejs)\" /usr/local/bin/node || true; fi"
     ].join(" && ");
     return onLog
       ? this.runWslBashStreaming(distro, script, onLog, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root")
@@ -753,17 +798,17 @@ export class EnvironmentService {
     if (/network|timed out|timeout|could not resolve|failed to connect/.test(blob)) {
       return "Network issue detected while installing Homebrew in WSL.";
     }
-    if (/sudo|permission denied|operation not permitted/.test(blob)) {
-      return "Homebrew installer was blocked by permissions. Ensure the WSL user is configured normally and retry.";
+    if (/sudo|permission denied|operation not permitted|not writable/.test(blob)) {
+      return "Homebrew installer was blocked by permissions. Automatic ownership repair was attempted; click Install Homebrew to retry.";
     }
-    return "Homebrew install in WSL failed. Open Ubuntu, run the Homebrew installer once manually, then retry setup.";
+    return "Homebrew install in WSL failed. Retry Install Homebrew and check WSL logs for details if it keeps failing.";
   }
 
   private async getWslStatus(): Promise<WslStatus> {
     const preferredDistro = this.getPreferredWslDistro();
 
     if (process.platform !== "win32") {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const list = await runCommand("wsl.exe", ["-l", "-q"], {
@@ -772,31 +817,35 @@ export class EnvironmentService {
       env: this.buildCommandEnv()
     });
 
-    const merged = `${list.stdout}\n${list.stderr}`.toLowerCase();
+    const merged = this.normalizeWslOutput(`${list.stdout}\n${list.stderr}`).toLowerCase();
     if (this.isWslCommandMissingOutput(merged)) {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     if (this.isWslFeatureDisabledOutput(merged)) {
-      return { wslInstalled: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+    }
+
+    if (this.isWslAccessDeniedOutput(merged)) {
+      return { wslInstalled: true, accessDenied: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const distributions = list.stdout
       .split(/\r?\n/)
-      .map((line) => line.replace(/\u0000/g, "").trim())
+      .map((line) => this.normalizeWslOutput(line).trim())
       .filter(Boolean);
 
     if (distributions.length === 0 && this.isNoInstalledDistrosOutput(merged)) {
-      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return { wslInstalled: true, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const resolvedDistro = this.resolveInstalledDistro(preferredDistro, distributions);
     if (!resolvedDistro) {
-      return { wslInstalled: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return { wslInstalled: true, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
     }
 
     const distroReachable = await this.canLaunchWslDistroAsRoot(resolvedDistro);
-    return { wslInstalled: true, distroInstalled: true, distroReachable, distro: resolvedDistro };
+    return { wslInstalled: true, accessDenied: false, distroInstalled: true, distroReachable, distro: resolvedDistro };
   }
 
   private resolveInstalledDistro(preferredDistro: string, installedDistros: string[]): string | null {
@@ -834,17 +883,33 @@ export class EnvironmentService {
     return /no installed distributions/.test(blob);
   }
 
+  private isWslAccessDeniedOutput(blob: string): boolean {
+    return /access is denied|e_accessdenied/.test(blob);
+  }
+
+  private normalizeWslOutput(text: string): string {
+    return text.replace(/\u0000/g, "").replace(/\ufeff/g, "");
+  }
+
   private async canLaunchWslDistroAsRoot(distro: string): Promise<boolean> {
+    const readinessMarker = "__OPENCLAW_WSL_READY__";
     const probe = await runCommand(
       "wsl.exe",
-      ["-d", distro, "-u", "root", "--", "/bin/sh", "-lc", "exit 0"],
+      ["-d", distro, "-u", "root", "--", "/bin/sh", "-lc", `printf '${readinessMarker}'`],
       {
         timeoutMs: 20_000,
         env: this.buildCommandEnv()
       }
     );
 
-    return probe.ok;
+    if (probe.ok) {
+      return true;
+    }
+
+    // Some systems emit mount warnings (for example, a problematic Windows drive)
+    // but still successfully start the distro shell.
+    const output = this.normalizeWslOutput(`${probe.stdout}\n${probe.stderr}`);
+    return output.includes(readinessMarker);
   }
 
   private getPreferredWslDistro(): string {
@@ -866,36 +931,230 @@ export class EnvironmentService {
     distro: string,
     onLog?: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
+    const brewUser = await this.resolveWslBrewUser(distro);
+    if (!brewUser) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Unable to determine the non-root Ubuntu user for Homebrew installation. Finish Ubuntu user setup and retry."
+      };
+    }
+
+    onLog?.(`Preparing Linuxbrew directory permissions for user ${brewUser}...`, "stdout");
+    const prepResult = await this.prepareLinuxbrewPermissions(distro, brewUser, onLog);
+    if (!prepResult.ok) {
+      const detail = [prepResult.stderr, prepResult.stdout].filter(Boolean).join("\n").trim();
+      return {
+        ...prepResult,
+        stderr: `${detail}\nFailed to prepare Linuxbrew directory permissions in WSL.`.trim()
+      };
+    }
+
     const script = [
       "set -e",
       "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
-      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; brew --version; exit 0; fi",
+      `if [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; exit 0; fi`,
+      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
       "export NONINTERACTIVE=1",
       "export CI=1",
-      "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
-      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi",
-      "brew --version"
+      "tmp_script=\"$(mktemp)\"",
+      "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o \"$tmp_script\"",
+      "/bin/bash \"$tmp_script\"",
+      "rm -f \"$tmp_script\"",
+      "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
+      `if [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; exit 0; fi`,
+      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
+      "exit 1"
+    ].join(" && ");
+
+    const install = onLog
+      ? await this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser)
+      : await this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser);
+
+    if (install.ok) {
+      return install;
+    }
+
+    const mergedOutput = `${install.stdout}\n${install.stderr}`;
+    if (!this.isBrewPermissionFailureOutput(mergedOutput)) {
+      return install;
+    }
+
+    onLog?.("Homebrew installer reported permission issues. Retrying after Linuxbrew ownership repair...", "stderr");
+    const repairResult = await this.prepareLinuxbrewPermissions(distro, brewUser, onLog);
+    if (!repairResult.ok) {
+      const repairDetail = [repairResult.stderr, repairResult.stdout].filter(Boolean).join("\n").trim();
+      return {
+        ...install,
+        stderr: `${install.stderr}\nAutomatic Linuxbrew ownership repair failed:\n${repairDetail}`.trim()
+      };
+    }
+
+    const retry = onLog
+      ? await this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser)
+      : await this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser);
+
+    if (retry.ok || !this.isBrewPermissionFailureOutput(`${retry.stdout}\n${retry.stderr}`)) {
+      return retry;
+    }
+
+    onLog?.("System Linuxbrew prefix is still blocked. Falling back to user prefix (~/.linuxbrew)...", "stderr");
+    const userPrefixPrep = await this.prepareUserPrefixBrewPermissions(distro, brewUser, onLog);
+    if (!userPrefixPrep.ok) {
+      const prepDetail = [userPrefixPrep.stderr, userPrefixPrep.stdout].filter(Boolean).join("\n").trim();
+      onLog?.(`User-prefix ownership repair failed before fallback install:\n${prepDetail}`, "stderr");
+    }
+    return onLog
+      ? this.installWslBrewInUserPrefixStreaming(distro, brewUser, onLog)
+      : this.installWslBrewInUserPrefix(distro, brewUser);
+  }
+
+  private async resolveWslBrewUser(distro: string): Promise<string | null> {
+    const currentUserResult = await this.runWslBash(distro, "id -un 2>/dev/null || true", 15_000);
+    if (currentUserResult.ok) {
+      const currentUser = this.normalizeWslUserName(
+        currentUserResult.stdout.trim().split(/\r?\n/).filter(Boolean).pop()?.trim() || ""
+      );
+      if (currentUser) {
+        return currentUser;
+      }
+    }
+
+    const marker = "__OPENCLAW_BREW_USER__";
+    const fallbackResult = await this.runWslBash(
+      distro,
+      [
+        "set -e",
+        "candidate=\"$(getent passwd 1000 | cut -d: -f1)\"",
+        "if [ -z \"$candidate\" ]; then candidate=\"$(ls -1 /home 2>/dev/null | grep -v '^root$' | head -n1)\"; fi",
+        `if [ -n \"$candidate\" ] && [ \"$candidate\" != \"root\" ]; then printf '${marker}%s${marker}' \"$candidate\"; else exit 1; fi`
+      ].join(" && "),
+      15_000,
+      "root"
+    );
+    if (!fallbackResult.ok) {
+      return null;
+    }
+
+    const fallbackBlob = this.normalizeWslOutput(`${fallbackResult.stdout}\n${fallbackResult.stderr}`);
+    const match = fallbackBlob.match(/__OPENCLAW_BREW_USER__(.+?)__OPENCLAW_BREW_USER__/);
+    const fallbackUser = this.normalizeWslUserName(match?.[1] || "");
+    if (!fallbackUser) {
+      return null;
+    }
+    return fallbackUser;
+  }
+
+  private async prepareLinuxbrewPermissions(
+    distro: string,
+    user: string,
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const normalizedUser = this.normalizeWslUserName(user);
+    if (!normalizedUser) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Unable to resolve the Ubuntu username for Linuxbrew ownership repair."
+      };
+    }
+
+    const quotedUser = this.quoteForBash(normalizedUser);
+    const script = [
+      "set -e",
+      `target_uid=\"$(id -u ${quotedUser})\"`,
+      `target_gid=\"$(id -g ${quotedUser})\"`,
+      "if [ -L /home/linuxbrew ]; then rm -f /home/linuxbrew; fi",
+      "if [ -e /home/linuxbrew ] && [ ! -d /home/linuxbrew ]; then rm -f /home/linuxbrew; fi",
+      `mkdir -p ${LINUXBREW_SYSTEM_PREFIX}`,
+      "chown -R \"$target_uid:$target_gid\" /home/linuxbrew",
+      "chmod -R u+rwx /home/linuxbrew"
     ].join(" && ");
 
     return onLog
-      ? this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS)
-      : this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS);
+      ? this.runWslBashStreaming(distro, script, onLog, 30_000, "root")
+      : this.runWslBash(distro, script, 30_000, "root");
+  }
+
+  private async prepareUserPrefixBrewPermissions(
+    distro: string,
+    user: string,
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const normalizedUser = this.normalizeWslUserName(user);
+    if (!normalizedUser) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: "Unable to resolve the Ubuntu username for user-prefix Homebrew ownership repair."
+      };
+    }
+
+    const quotedUser = this.quoteForBash(normalizedUser);
+    const fallbackHome = this.quoteForBash(`/home/${normalizedUser}`);
+    const script = [
+      "set -e",
+      `target_uid=\"$(id -u ${quotedUser})\"`,
+      `target_gid=\"$(id -g ${quotedUser})\"`,
+      `target_home=\"$(getent passwd ${quotedUser} | cut -d: -f6)\"`,
+      `if [ -z \"$target_home\" ]; then target_home=${fallbackHome}; fi`,
+      "mkdir -p \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\"",
+      "chown -R \"$target_uid:$target_gid\" \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\"",
+      "chmod -R u+rwx \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\""
+    ].join(" && ");
+
+    return onLog
+      ? this.runWslBashStreaming(distro, script, onLog, 30_000, "root")
+      : this.runWslBash(distro, script, 30_000, "root");
+  }
+
+  private isBrewPermissionFailureOutput(output: string): boolean {
+    const blob = output.toLowerCase();
+    return /permission denied|operation not permitted|not writable|writable by your user|cannot create|can't create|failed during: .*mkdir|need sudo|change the ownership|sudo chown/.test(blob);
   }
 
   private async getNodeRuntimeStatus(distro: string): Promise<{ nodeInstalled: boolean; npmInstalled: boolean }> {
     const nodeCheck = await this.runWslBash(distro, "node --version", 20_000);
+    const nodejsCheck = nodeCheck.ok
+      ? nodeCheck
+      : await this.runWslBash(distro, "nodejs --version", 20_000);
     const npmCheck = await this.runWslBash(distro, "npm --version", 20_000);
     return {
-      nodeInstalled: nodeCheck.ok,
+      nodeInstalled: nodeCheck.ok || nodejsCheck.ok,
       npmInstalled: npmCheck.ok
     };
   }
 
-  private async isBrewAvailable(distro: string): Promise<boolean> {
+  private async isBrewAvailableForSetup(distro: string): Promise<boolean> {
+    if (await this.isBrewAvailable(distro)) {
+      return true;
+    }
+
+    const brewUser = await this.resolveWslBrewUser(distro);
+    if (!brewUser) {
+      return false;
+    }
+
+    const currentUserResult = await this.runWslBash(distro, "id -un", 15_000);
+    const currentUser = currentUserResult.ok
+      ? currentUserResult.stdout.trim().split(/\r?\n/).filter(Boolean).pop()?.trim() || ""
+      : "";
+    if (currentUser && currentUser === brewUser) {
+      return false;
+    }
+
+    return this.isBrewAvailable(distro, brewUser);
+  }
+
+  private async isBrewAvailable(distro: string, user?: string): Promise<boolean> {
     const check = await this.runWslBash(
       distro,
-      "if command -v brew >/dev/null 2>&1; then brew --version; elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; brew --version; else exit 1; fi",
-      20_000
+      `if command -v brew >/dev/null 2>&1; then brew --version; elif [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; elif [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; else exit 1; fi`,
+      20_000,
+      user
     );
     return check.ok;
   }
@@ -922,7 +1181,7 @@ export class EnvironmentService {
     const script = [
       "$ErrorActionPreference = 'SilentlyContinue'",
       `$distro = ${distro}`,
-      "$cmd = 'if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start >/dev/null 2>&1'",
+      `$cmd = '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start >/dev/null 2>&1'`,
       "wsl.exe -d $distro -- bash -lc $cmd"
     ].join("; ");
     const escapedScript = script.replace(/"/g, '\\"');
@@ -1004,29 +1263,96 @@ export class EnvironmentService {
     }
   }
 
-  private runOpenClawInWsl(distro: string, args: string[]): Promise<CommandResult> {
+  private async runOpenClawInWsl(distro: string, args: string[]): Promise<CommandResult> {
     const command = this.buildWslOpenClawCommand(args);
-    return this.runWslBash(distro, command, OPENCLAW_INSTALL_TIMEOUT_MS);
+    const cliUser = await this.resolveWslBrewUser(distro);
+    return this.runWslBash(distro, command, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
   }
 
-  private runOpenClawInWslStreaming(
+  private async runOpenClawInWslStreaming(
     distro: string,
     args: string[],
     onLog: (line: string, stream: "stdout" | "stderr") => void
   ): Promise<CommandResult> {
     const command = this.buildWslOpenClawCommand(args);
-    return this.runWslBashStreaming(distro, command, onLog, OPENCLAW_INSTALL_TIMEOUT_MS);
+    const cliUser = await this.resolveWslBrewUser(distro);
+    return this.runWslBashStreaming(distro, command, onLog, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
   }
 
   private buildWslOpenClawCommand(args: string[]): string {
     const quotedArgs = args.map((arg) => this.quoteForBash(arg)).join(" ");
     return [
-      "if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; fi",
+      this.buildBrewShellenvBootstrapCommand(),
       "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
       "OPENCLAW_CMD=\"$HOME/.openclaw-desktop/npm/bin/openclaw\"",
       "if [ ! -x \"$OPENCLAW_CMD\" ]; then OPENCLAW_CMD=\"openclaw\"; fi",
       quotedArgs ? `$OPENCLAW_CMD ${quotedArgs}` : "$OPENCLAW_CMD"
     ].join("; ");
+  }
+
+  private buildBrewShellenvBootstrapCommand(): string {
+    return [
+      "if command -v brew >/dev/null 2>&1; then :",
+      `elif [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then export HOMEBREW_PREFIX=${LINUXBREW_SYSTEM_PREFIX}; export HOMEBREW_REPOSITORY=${LINUXBREW_SYSTEM_PREFIX}/Homebrew; export HOMEBREW_CELLAR=${LINUXBREW_SYSTEM_PREFIX}/Cellar; export PATH=${LINUXBREW_SYSTEM_PREFIX}/bin:${LINUXBREW_SYSTEM_PREFIX}/sbin:\"$PATH\"; export MANPATH=${LINUXBREW_SYSTEM_PREFIX}/share/man:\"\${MANPATH:-}\"; export INFOPATH=${LINUXBREW_SYSTEM_PREFIX}/share/info:\"\${INFOPATH:-}\"`,
+      "elif [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then export HOMEBREW_PREFIX=\"$HOME/.linuxbrew\"; export HOMEBREW_REPOSITORY=\"$HOMEBREW_PREFIX/Homebrew\"; export HOMEBREW_CELLAR=\"$HOMEBREW_PREFIX/Cellar\"; export PATH=\"$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH\"; export MANPATH=\"$HOMEBREW_PREFIX/share/man:${MANPATH:-}\"; export INFOPATH=\"$HOMEBREW_PREFIX/share/info:${INFOPATH:-}\"",
+      "fi"
+    ].join("; ");
+  }
+
+  private installWslBrewInUserPrefix(
+    distro: string,
+    user: string
+  ): Promise<CommandResult> {
+    return this.runWslBash(distro, this.buildUserPrefixBrewInstallScript(), WSL_BREW_INSTALL_TIMEOUT_MS, user);
+  }
+
+  private installWslBrewInUserPrefixStreaming(
+    distro: string,
+    user: string,
+    onLog: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    return this.runWslBashStreaming(distro, this.buildUserPrefixBrewInstallScript(), onLog, WSL_BREW_INSTALL_TIMEOUT_MS, user);
+  }
+
+  private buildUserPrefixBrewInstallScript(): string {
+    return [
+      "set -e",
+      "if [ -z \"${HOME:-}\" ]; then HOME=\"$(getent passwd \"$(id -u)\" | cut -d: -f6)\"; fi",
+      "if [ -z \"${HOME:-}\" ]; then HOME=\"/home/$(id -un)\"; fi",
+      "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
+      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
+      "export NONINTERACTIVE=1",
+      "export CI=1",
+      "export HOMEBREW_PREFIX=\"$HOME/.linuxbrew\"",
+      "export HOMEBREW_REPOSITORY=\"$HOMEBREW_PREFIX/Homebrew\"",
+      "export HOMEBREW_CELLAR=\"$HOMEBREW_PREFIX/Cellar\"",
+      "export HOMEBREW_CACHE=\"$HOME/.cache/Homebrew\"",
+      "mkdir -p \"$HOMEBREW_PREFIX\" \"$HOMEBREW_CACHE\"",
+      "if [ ! -d \"$HOMEBREW_REPOSITORY/.git\" ]; then git clone --depth=1 https://github.com/Homebrew/brew \"$HOMEBREW_REPOSITORY\"; fi",
+      "mkdir -p \"$HOMEBREW_PREFIX/bin\" \"$HOMEBREW_PREFIX/sbin\"",
+      "ln -sf ../Homebrew/bin/brew \"$HOMEBREW_PREFIX/bin/brew\"",
+      "export PATH=\"$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH\"",
+      "export MANPATH=\"$HOMEBREW_PREFIX/share/man:${MANPATH:-}\"",
+      "export INFOPATH=\"$HOMEBREW_PREFIX/share/info:${INFOPATH:-}\"",
+      "\"$HOMEBREW_PREFIX/bin/brew\" --version"
+    ].join(" && ");
+  }
+
+  private normalizeWslUserName(value: string): string {
+    const normalized = this.normalizeWslOutput(value).trim().replace(/^['"]+|['"]+$/g, "");
+    if (!normalized) {
+      return "";
+    }
+
+    if (!/^[a-z_][a-z0-9_.-]*[$]?$/i.test(normalized)) {
+      return "";
+    }
+
+    if (normalized.toLowerCase() === "root") {
+      return "";
+    }
+
+    return normalized;
   }
 
   private async resolveOpenClawCommand(): Promise<string> {

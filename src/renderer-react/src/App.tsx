@@ -143,6 +143,16 @@ function readinessText(value: boolean | null, ok = "Ready", bad = "Missing") {
   return value ? ok : bad;
 }
 
+function joinWithAnd(parts: string[]): string {
+  if (parts.length <= 1) {
+    return parts[0] ?? "";
+  }
+  if (parts.length === 2) {
+    return `${parts[0]} and ${parts[1]}`;
+  }
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
 function setupStageLabel(stage: SetupState["stage"]): string {
   switch (stage) {
     case "checking_prereqs":
@@ -214,6 +224,57 @@ function summarizeCommandResult(title: string, result: CommandResult, appendLog:
   }
 }
 
+function extractCommandFailureReason(result: CommandResult, fallbackTitle: string): string {
+  const raw = [result.stderr, result.stdout].filter(Boolean).join("\n");
+  const normalized = raw.replace(/\u0000/g, "").replace(/\ufeff/g, "").trim();
+  if (!normalized) {
+    return `${fallbackTitle} failed${result.code === null ? "." : ` (code ${result.code}).`}`;
+  }
+
+  if (/WSL_USER_SETUP_REQUIRED/i.test(normalized)) {
+    return "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup.";
+  }
+
+  if (/Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED/i.test(normalized)) {
+    return "WSL distro access was denied by Windows permissions in this session. Run the app in your normal user session and retry.";
+  }
+
+  const lines = normalized
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const last = lines[lines.length - 1] || normalized;
+  return last.length > 260 ? `${last.slice(0, 257)}...` : last;
+}
+
+function throwIfCommandFailed(title: string, result: CommandResult): void {
+  if (!result.ok) {
+    throw new Error(extractCommandFailureReason(result, title));
+  }
+}
+
+function toFriendlyFailureMessage(message: string): string {
+  const normalized = message.replace(/\u0000/g, "").replace(/\ufeff/g, "").trim();
+  if (!normalized) {
+    return "Action failed. Please retry.";
+  }
+
+  if (/Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED|access is denied/i.test(normalized)) {
+    return "Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session and retry.";
+  }
+
+  if (/cancel|1602|1223|uac/i.test(normalized)) {
+    return "WSL install was cancelled or denied. Click Install Ubuntu again and accept the Windows admin prompt.";
+  }
+
+  if (/restart|reboot|3010|1641/i.test(normalized)) {
+    return "Windows restart is required before setup can continue.";
+  }
+
+  return normalized;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<Workspace>("setup");
   const [pane, setPane] = useState<FeaturePane>("onboarding");
@@ -266,9 +327,30 @@ export function App() {
       && environment.brewInstalled;
   }, [environment]);
 
+  const missingRuntimeDependencies = useMemo(() => {
+    if (!environment || !environment.wslReady || !environment.wslUserConfigured) {
+      return [] as string[];
+    }
+
+    const missing: string[] = [];
+    if (!environment.nodeInstalled) {
+      missing.push("Node.js");
+    }
+    if (!environment.npmInstalled) {
+      missing.push("npm");
+    }
+    if (!environment.brewInstalled) {
+      missing.push("Homebrew");
+    }
+    return missing;
+  }, [environment]);
+
   const runtimeInstallActionLabel = useMemo(() => {
     if (!environment) {
       return "Install WSL";
+    }
+    if (environment.wslAccessDenied) {
+      return "Check WSL Permissions";
     }
     if (!environment.wslInstalled) {
       return "Install WSL";
@@ -279,11 +361,17 @@ export function App() {
     if (!environment.wslReady) {
       return "Repair WSL";
     }
+    if (missingRuntimeDependencies.length > 0) {
+      if (missingRuntimeDependencies.length === 3) {
+        return "Install WSL Runtime";
+      }
+      return `Install ${missingRuntimeDependencies.join(" + ")}`;
+    }
     if (!environment.nodeInstalled || !environment.npmInstalled || !environment.brewInstalled) {
       return "Install WSL Runtime";
     }
     return "Repair WSL Runtime";
-  }, [environment]);
+  }, [environment, missingRuntimeDependencies]);
 
   const gatewayReady = useMemo(() => {
     if (!environment) {
@@ -307,6 +395,45 @@ export function App() {
   const canResumeAfterReboot = setupState.stage === "awaiting_reboot" && Boolean(environment?.wslReady);
   const awaitingWslUserSetup = setupState.stage === "awaiting_wsl_user_setup"
     || Boolean(environment && environment.wslReady && !environment.wslUserConfigured);
+
+  const runtimeGuidance = useMemo(() => {
+    if (!environment) {
+      return "Checking WSL and Ubuntu status...";
+    }
+
+    if (rebootStillPending || setupState.stage === "awaiting_reboot") {
+      return "Windows restart is required. Click Restart Windows, then return and click Resume Setup.";
+    }
+
+    if (environment.wslAccessDenied) {
+      return "Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session, then retry.";
+    }
+
+    if (!environment.wslInstalled) {
+      return "WSL is not installed yet. Click Install WSL and accept the Windows admin prompt.";
+    }
+
+    if (!environment.wslDistroInstalled) {
+      return "Ubuntu is not installed yet. Click Install Ubuntu. If you already saw `wsl.exe exit code: 0`, click Refresh and wait briefly; if still missing, restart Windows once and retry.";
+    }
+
+    if (environment.wslReady && !environment.wslUserConfigured) {
+      return "Ubuntu first-run setup is pending. Click Open Ubuntu Setup, create username/password, then click Resume Setup.";
+    }
+
+    if (environment.wslReady && environment.wslUserConfigured && missingRuntimeDependencies.length > 0) {
+      if (missingRuntimeDependencies.length === 3) {
+        return "WSL runtime dependencies are incomplete. Click Install WSL Runtime to install Node.js, npm, and Homebrew.";
+      }
+      return `WSL runtime dependencies are incomplete (${joinWithAnd(missingRuntimeDependencies)}). Click ${runtimeInstallActionLabel}.`;
+    }
+
+    if (runtimeReady) {
+      return "Runtime is ready. Click Continue to move to the OpenClaw step.";
+    }
+
+    return "Click Install WSL to continue setup.";
+  }, [environment, missingRuntimeDependencies, rebootStillPending, runtimeInstallActionLabel, runtimeReady, setupState.stage]);
 
   const clearActionProgressTimers = useCallback(() => {
     if (actionProgressTimerRef.current) {
@@ -369,6 +496,9 @@ export function App() {
               style={{ width: `${Math.max(0, Math.min(100, actionProgressValue))}%` }}
             />
           </div>
+          {actionProgressState === "failed" && error ? (
+            <p className="text-xs text-[#f3c2c8]">{toFriendlyFailureMessage(error)}</p>
+          ) : null}
         </CardContent>
       </Card>
     );
@@ -412,7 +542,7 @@ export function App() {
       appendLog(`${label}: done.`);
       return true;
     } catch (err) {
-      const message = formatError(err);
+      const message = toFriendlyFailureMessage(formatError(err));
       setError(message);
       setActionProgressValue(100);
       setActionProgressState("failed");
@@ -625,20 +755,23 @@ export function App() {
   const settingsProvider = configDraft?.modelProvider ?? "";
   const settingsModelOptions = settingsProvider ? modelStatus?.modelsByProvider?.[settingsProvider] ?? [] : [];
 
-  const installNode = () => runAction("WSL install", async () => {
-    const result = await window.openclaw.installNodeRuntime();
-    summarizeCommandResult("WSL install", result, appendLog);
+  const installNode = () => runAction(runtimeInstallActionLabel, async () => {
+    const result = await window.openclaw.installNodeRuntimeStreaming();
+    summarizeCommandResult(runtimeInstallActionLabel, result, appendLog);
+    throwIfCommandFailed(runtimeInstallActionLabel, result);
     await refreshAll();
   });
 
   const restartComputer = useCallback(() => runAction("Restart Windows", async () => {
     const result = await window.openclaw.restartComputer();
     summarizeCommandResult("Restart Windows", result, appendLog);
+    throwIfCommandFailed("Restart Windows", result);
   }), [appendLog, runAction]);
 
   const openWslUserSetup = useCallback(() => runAction("Open Ubuntu setup", async () => {
     const result = await window.openclaw.openWslUserSetup();
     summarizeCommandResult("Open Ubuntu setup", result, appendLog);
+    throwIfCommandFailed("Open Ubuntu setup", result);
     appendLog("Finish Ubuntu username/password in the opened terminal, then click Resume Setup.");
   }), [appendLog, runAction]);
 
@@ -716,26 +849,30 @@ export function App() {
   }, [awaitingWslUserSetup, isBusy, refreshEnvironmentSetup]);
 
   const installOpenClaw = () => runAction("OpenClaw install", async () => {
-    const result = await window.openclaw.installOpenClaw();
+    const result = await window.openclaw.installOpenClawStreaming();
     summarizeCommandResult("OpenClaw install", result, appendLog);
+    throwIfCommandFailed("OpenClaw install", result);
     await refreshAll();
   });
 
   const runCliOnboard = () => runAction("CLI onboarding", async () => {
     const result = await window.openclaw.runOnboarding();
     summarizeCommandResult("CLI onboard", result, appendLog);
+    throwIfCommandFailed("CLI onboard", result);
     await refreshAll();
   });
 
   const startGateway = () => runAction("Gateway start", async () => {
     const result = await window.openclaw.gatewayStart();
     summarizeCommandResult("Gateway start", result, appendLog);
+    throwIfCommandFailed("Gateway start", result);
     await refreshAll();
   });
 
   const stopGateway = () => runAction("Gateway stop", async () => {
     const result = await window.openclaw.gatewayStop();
     summarizeCommandResult("Gateway stop", result, appendLog);
+    throwIfCommandFailed("Gateway stop", result);
     await refreshAll();
   });
 
@@ -1114,33 +1251,57 @@ export function App() {
           {renderStatusTable([
             {
               label: "WSL",
-              value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.wslInstalled : null)
+              value: environment?.wslAccessDenied
+                ? "Access denied"
+                : readinessText(environment ? environment.wslInstalled : null, "Installed"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.wslInstalled : null)
             },
             {
               label: "Ubuntu distro",
-              value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.wslDistroInstalled : null)
+              value: environment?.wslAccessDenied
+                ? "Unknown"
+                : readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.wslDistroInstalled : null)
             },
             {
               label: "Ubuntu user",
-              value: readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
-              variant: toVariant(environment ? environment.wslUserConfigured : null)
+              value: environment?.wslAccessDenied
+                ? "Unknown"
+                : readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.wslUserConfigured : null)
             },
             {
               label: "Node.js (WSL)",
-              value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.nodeInstalled : null)
+              value: environment?.wslAccessDenied
+                ? "Unknown"
+                : readinessText(environment ? environment.nodeInstalled : null, "Installed"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.nodeInstalled : null)
             },
             {
               label: "npm (WSL)",
-              value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.npmInstalled : null)
+              value: environment?.wslAccessDenied
+                ? "Unknown"
+                : readinessText(environment ? environment.npmInstalled : null, "Installed"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.npmInstalled : null)
             },
             {
               label: "Homebrew (WSL)",
-              value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.brewInstalled : null)
+              value: environment?.wslAccessDenied
+                ? "Unknown"
+                : readinessText(environment ? environment.brewInstalled : null, "Installed"),
+              variant: environment?.wslAccessDenied
+                ? toVariant(null)
+                : toVariant(environment ? environment.brewInstalled : null)
             },
             {
               label: "OpenClaw CLI",
@@ -1547,7 +1708,7 @@ export function App() {
             ref={webviewRef}
             className="h-[calc(100vh-16.5rem)] w-full rounded-sm border border-border bg-[#141414]"
             src={ready ? CONTROL_UI_URL : "about:blank"}
-            allowpopups="false"
+            allowpopups={false}
             partition="persist:openclaw-control"
           />
         </CardContent>
@@ -1603,6 +1764,10 @@ export function App() {
     }
 
     if (step === "runtime") {
+      if (environment?.wslAccessDenied) {
+        setError("Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session and retry.");
+        return;
+      }
       if (awaitingWslUserSetup && !environment?.wslUserConfigured) {
         await openWslUserSetup();
         return;
@@ -1800,35 +1965,67 @@ export function App() {
                   {renderStatusTable([
                     {
                       label: "WSL",
-                      value: readinessText(environment ? environment.wslInstalled : null, "Installed"),
-                      variant: toVariant(environment ? environment.wslInstalled : null)
+                      value: environment?.wslAccessDenied
+                        ? "Access denied"
+                        : readinessText(environment ? environment.wslInstalled : null, "Installed"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.wslInstalled : null)
                     },
                     {
                       label: "Ubuntu distro",
-                      value: readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
-                      variant: toVariant(environment ? environment.wslDistroInstalled : null)
+                      value: environment?.wslAccessDenied
+                        ? "Unknown"
+                        : readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.wslDistroInstalled : null)
                     },
                     {
                       label: "Ubuntu user",
-                      value: readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
-                      variant: toVariant(environment ? environment.wslUserConfigured : null)
+                      value: environment?.wslAccessDenied
+                        ? "Unknown"
+                        : readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.wslUserConfigured : null)
                     },
                     {
                       label: "Node.js (WSL)",
-                      value: readinessText(environment ? environment.nodeInstalled : null, "Installed"),
-                      variant: toVariant(environment ? environment.nodeInstalled : null)
+                      value: environment?.wslAccessDenied
+                        ? "Unknown"
+                        : readinessText(environment ? environment.nodeInstalled : null, "Installed"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.nodeInstalled : null)
                     },
                     {
                       label: "npm (WSL)",
-                      value: readinessText(environment ? environment.npmInstalled : null, "Installed"),
-                      variant: toVariant(environment ? environment.npmInstalled : null)
+                      value: environment?.wslAccessDenied
+                        ? "Unknown"
+                        : readinessText(environment ? environment.npmInstalled : null, "Installed"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.npmInstalled : null)
                     },
                     {
                       label: "Homebrew (WSL)",
-                      value: readinessText(environment ? environment.brewInstalled : null, "Installed"),
-                      variant: toVariant(environment ? environment.brewInstalled : null)
+                      value: environment?.wslAccessDenied
+                        ? "Unknown"
+                        : readinessText(environment ? environment.brewInstalled : null, "Installed"),
+                      variant: environment?.wslAccessDenied
+                        ? toVariant(null)
+                        : toVariant(environment ? environment.brewInstalled : null)
                     }
                   ])}
+                  {environment?.wslAccessDenied ? (
+                    <Card>
+                      <CardContent className="pt-4 text-sm text-muted-foreground">
+                        WSL is present, but this session cannot enumerate distros due to Windows permissions (`E_ACCESSDENIED`).
+                        Run OpenClaw Desktop in your normal user session and verify WSL access with `wsl -l -v`.
+                      </CardContent>
+                    </Card>
+                  ) : null}
                   {awaitingReboot || awaitingWslUserSetup ? (
                     <Card>
                       <CardContent className="pt-4 text-sm text-muted-foreground">
@@ -1837,6 +2034,25 @@ export function App() {
                           : rebootStillPending
                             ? "Windows restart is required to continue setup."
                             : "Restart/setup prerequisites completed. Click Resume Setup to continue from where you left off."}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  <Card>
+                    <CardContent className="pt-4 text-sm text-muted-foreground">
+                      {runtimeGuidance}
+                    </CardContent>
+                  </Card>
+                  {setupState.stage === "failed" ? (
+                    <Card>
+                      <CardContent className="pt-4 text-sm text-[#f3c2c8]">
+                        {toFriendlyFailureMessage(setupState.message)}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {error ? (
+                    <Card>
+                      <CardContent className="pt-4 text-sm text-[#f3c2c8]">
+                        {toFriendlyFailureMessage(error)}
                       </CardContent>
                     </Card>
                   ) : null}

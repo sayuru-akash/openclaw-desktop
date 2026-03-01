@@ -576,6 +576,15 @@ function createTray(): void {
 }
 
 function broadcastSetupProgress(event: SetupProgressEvent): void {
+  const setupLogLine = `[setup:${event.stage}:${event.source}] ${event.message}`;
+  if (event.level === "error") {
+    console.error(setupLogLine);
+  } else if (event.level === "warning") {
+    console.warn(setupLogLine);
+  } else {
+    console.info(setupLogLine);
+  }
+
   if (!mainWindow || mainWindow.isDestroyed()) {
     pendingSetupEvents.push(event);
     if (pendingSetupEvents.length > 200) {

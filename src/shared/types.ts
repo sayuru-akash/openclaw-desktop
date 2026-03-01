@@ -91,6 +91,7 @@ export interface EnvironmentStatus {
   platform: NodeJS.Platform;
   isWindows: boolean;
   wslInstalled: boolean;
+  wslAccessDenied: boolean;
   wslDistro: string;
   wslDistroInstalled: boolean;
   wslReady: boolean;

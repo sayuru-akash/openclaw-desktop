@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { SetupProgressEvent, SetupStage, SetupState } from "../../shared/types";
+import type { CommandResult, SetupProgressEvent, SetupStage, SetupState } from "../../shared/types";
 import type { EnvironmentService } from "./environment";
 import type { SetupStore } from "./setup-store";
 
@@ -84,6 +84,7 @@ export class SetupOrchestrator extends EventEmitter {
       if (!nodeInstall.ok) {
         const rebootRequired = this.environmentService.rebootRequired(nodeInstall);
         const needsWslUserSetup = nodeInstall.stderr.includes(WSL_USER_SETUP_REQUIRED_MARKER);
+        const failureReason = this.extractCommandFailureReason(nodeInstall);
         return this.saveState(
           {
             stage: needsWslUserSetup ? "awaiting_wsl_user_setup" : "failed",
@@ -92,7 +93,7 @@ export class SetupOrchestrator extends EventEmitter {
               ? "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup."
               : rebootRequired
                 ? "WSL setup requested a restart. Restart Windows and continue setup."
-                : "WSL/runtime installation failed. Check logs and retry setup."
+                : `WSL/runtime installation failed: ${failureReason}`
           },
           needsWslUserSetup ? "warning" : "error"
         );
@@ -292,5 +293,28 @@ export class SetupOrchestrator extends EventEmitter {
     };
 
     this.emit("progress", event);
+  }
+
+  private extractCommandFailureReason(result: CommandResult): string {
+    const raw = [result.stderr, result.stdout].filter(Boolean).join("\n");
+    const normalized = raw.replace(/\u0000/g, "").replace(/\ufeff/g, "").trim();
+    if (!normalized) {
+      return `Command failed${result.code === null ? "." : ` (code ${result.code}).`}`;
+    }
+
+    if (/WSL_USER_SETUP_REQUIRED/i.test(normalized)) {
+      return "Ubuntu account setup is required.";
+    }
+    if (/Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED|access is denied/i.test(normalized)) {
+      return "WSL distro access was denied by Windows permissions in this session.";
+    }
+
+    const lines = normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const finalLine = lines[lines.length - 1] || normalized;
+    return finalLine.length > 220 ? `${finalLine.slice(0, 217)}...` : finalLine;
   }
 }
