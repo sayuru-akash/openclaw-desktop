@@ -98,7 +98,7 @@ interface StatusTableRow {
   variant: "default" | "success" | "warning" | "danger";
 }
 
-type OnboardingStepId = "welcome" | "runtime" | "openclaw" | "gateway" | "model" | "done";
+type OnboardingStepId = "welcome" | "runtime" | "openclaw" | "model" | "done";
 
 interface OnboardingStep {
   id: OnboardingStepId;
@@ -110,8 +110,7 @@ interface OnboardingStep {
 const onboardingSteps: OnboardingStep[] = [
   { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Sign in and set up OpenClaw." },
   { id: "runtime", label: "WSL", title: "Install WSL", subtitle: "Install WSL, Ubuntu, Node.js, npm, and Homebrew." },
-  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI in WSL." },
-  { id: "gateway", label: "Gateway", title: "Start Gateway", subtitle: "Start local gateway." },
+  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI and start gateway." },
   { id: "model", label: "Model", title: "Pick Model", subtitle: "Choose provider and model." },
   { id: "done", label: "Done", title: "Finish", subtitle: "Complete onboarding and open the app." }
 ];
@@ -1726,9 +1725,7 @@ export function App() {
       case "runtime":
         return runtimeReady === true;
       case "openclaw":
-        return Boolean(environment?.openClawInstalled);
-      case "gateway":
-        return Boolean(environment?.gatewayRunning);
+        return Boolean(environment?.openClawInstalled) && Boolean(environment?.gatewayRunning);
       case "model":
         return modelConfigured;
       case "done":
@@ -1803,32 +1800,30 @@ export function App() {
     }
 
     if (step === "openclaw") {
-      if (environment?.openClawInstalled) {
+      if (environment?.openClawInstalled && environment?.gatewayRunning) {
         advanceOnboarding();
         return;
       }
-      const ok = await installOpenClaw();
-      if (!ok) {
-        return;
+      if (!environment?.openClawInstalled) {
+        const ok = await installOpenClaw();
+        if (!ok) {
+          return;
+        }
+        const envAfterInstall = await refreshEnvironmentSetup();
+        if (!envAfterInstall.openClawInstalled) {
+          return;
+        }
       }
-      const env = await refreshEnvironmentSetup();
-      if (env.openClawInstalled) {
-        advanceOnboarding();
-      }
-      return;
-    }
-
-    if (step === "gateway") {
-      if (environment?.gatewayRunning) {
-        advanceOnboarding();
-        return;
-      }
-      const ok = await startGateway();
-      if (!ok) {
-        return;
-      }
-      const env = await refreshEnvironmentSetup();
-      if (env.gatewayRunning) {
+      if (!environment?.gatewayRunning) {
+        const ok = await startGateway();
+        if (!ok) {
+          return;
+        }
+        const envAfterGateway = await refreshEnvironmentSetup();
+        if (envAfterGateway.gatewayRunning) {
+          advanceOnboarding();
+        }
+      } else {
         advanceOnboarding();
       }
       return;
@@ -1883,9 +1878,9 @@ export function App() {
         }
         return runtimeReady ? "Continue" : runtimeInstallActionLabel;
       case "openclaw":
-        return environment?.openClawInstalled ? "Continue" : "Install OpenClaw";
-      case "gateway":
-        return environment?.gatewayRunning ? "Continue" : "Start Gateway";
+        if (environment?.openClawInstalled && environment?.gatewayRunning) return "Continue";
+        if (environment?.openClawInstalled) return "Start Gateway";
+        return "Install OpenClaw";
       case "model":
         return modelConfigured ? "Continue" : "Apply Model";
       case "done":
@@ -2065,12 +2060,7 @@ export function App() {
                     label: "OpenClaw CLI",
                     value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
                     variant: toVariant(environment ? environment.openClawInstalled : null)
-                  }
-                ])
-              ) : null}
-
-              {currentOnboardingStep.id === "gateway" ? (
-                renderStatusTable([
+                  },
                   {
                     label: "Gateway",
                     value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),

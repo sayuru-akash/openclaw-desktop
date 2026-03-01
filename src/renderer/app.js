@@ -179,10 +179,7 @@ const onboardingElements = {
   openclawStatus: byId("onboardingOpenClawStatus"),
   installOpenClaw: byId("onboardingInstallOpenClawButton"),
   recheckOpenClaw: byId("onboardingRecheckOpenClawButton"),
-  continueGateway: byId("onboardingContinueToGatewayButton"),
   gatewayStatus: byId("onboardingGatewayStatus"),
-  startGateway: byId("onboardingStartGatewayButton"),
-  recheckGateway: byId("onboardingRecheckGatewayButton"),
   continueModel: byId("onboardingContinueToModelButton"),
   modelStatus: byId("onboardingModelStatus"),
   modelProvider: byId("onboardingModelProvider"),
@@ -196,7 +193,7 @@ const onboardingElements = {
 };
 
 const onboardingStepNodes = [...document.querySelectorAll("[data-onboarding-step]")];
-const ONBOARDING_STEP_ORDER = ["welcome", "node", "openclaw", "gateway", "model", "done"];
+const ONBOARDING_STEP_ORDER = ["welcome", "node", "openclaw", "model", "done"];
 
 let lastEnvironmentStatus = null;
 let lastSetupState = null;
@@ -728,8 +725,7 @@ function updateOnboardingUiFromState() {
     : "Set provider, model, and API key.";
 
   onboardingElements.continueOpenClaw.disabled = !(status.wslReady && status.wslUserConfigured && status.nodeInstalled && status.npmInstalled && status.brewInstalled);
-  onboardingElements.continueGateway.disabled = !status.openClawInstalled;
-  onboardingElements.continueModel.disabled = !status.gatewayRunning;
+  onboardingElements.continueModel.disabled = !(status.openClawInstalled && status.gatewayRunning);
   onboardingElements.continueDone.disabled = !(modelProvider && modelName);
 }
 
@@ -739,12 +735,8 @@ function getSuggestedOnboardingStep() {
     return "node";
   }
 
-  if (!status.openClawInstalled) {
+  if (!status.openClawInstalled || !status.gatewayRunning) {
     return "openclaw";
-  }
-
-  if (!status.gatewayRunning) {
-    return "gateway";
   }
 
   const modelProvider = (appConfig && appConfig.modelProvider) || (lastModelStatus && lastModelStatus.provider) || "";
@@ -3254,6 +3246,17 @@ function wireActions() {
       summarizeCommandResult("OpenClaw install", result);
       await runEnvironmentCheck();
       await refreshSetupState();
+      if (lastEnvironmentStatus && lastEnvironmentStatus.openClawInstalled && !lastEnvironmentStatus.gatewayRunning) {
+        appendLog("Onboarding: starting gateway after OpenClaw install...");
+        const gwResult = await withInlineProgress(
+          onboardingElements.gatewayStatus,
+          "Starting gateway",
+          () => window.openclaw.gatewayStartStreaming()
+        );
+        summarizeCommandResult("Gateway start", gwResult);
+        await runEnvironmentCheck();
+        await refreshSetupState();
+      }
     });
   });
 
@@ -3265,40 +3268,9 @@ function wireActions() {
     });
   });
 
-  onboardingElements.continueGateway.addEventListener("click", () => {
-    if (!(lastEnvironmentStatus && lastEnvironmentStatus.openClawInstalled)) {
-      onboardingElements.openclawStatus.textContent = "Install OpenClaw first.";
-      return;
-    }
-    setOnboardingStep("gateway");
-  });
-
-  onboardingElements.startGateway.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await withBusy(button, async () => {
-      appendLog("Onboarding: starting gateway...");
-      const result = await withInlineProgress(
-        onboardingElements.gatewayStatus,
-        "Starting gateway",
-        () => window.openclaw.gatewayStartStreaming()
-      );
-      summarizeCommandResult("Gateway start", result);
-      await runEnvironmentCheck();
-      await refreshSetupState();
-    });
-  });
-
-  onboardingElements.recheckGateway.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await withBusy(button, async () => {
-      await runEnvironmentCheck();
-      await refreshSetupState();
-    });
-  });
-
   onboardingElements.continueModel.addEventListener("click", () => {
-    if (!(lastEnvironmentStatus && lastEnvironmentStatus.gatewayRunning)) {
-      onboardingElements.gatewayStatus.textContent = "Start gateway first.";
+    if (!(lastEnvironmentStatus && lastEnvironmentStatus.openClawInstalled && lastEnvironmentStatus.gatewayRunning)) {
+      onboardingElements.openclawStatus.textContent = "Install OpenClaw and start gateway first.";
       return;
     }
     setOnboardingStep("model");
