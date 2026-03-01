@@ -36,6 +36,8 @@ const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const DEFAULT_WSL_DISTRO = "Ubuntu";
 const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
 const LINUXBREW_SYSTEM_PREFIX = "/home/linuxbrew/.linuxbrew";
+const MIN_OPENCLAW_WSL_NODE_MAJOR = 20;
+const WSL_RUNTIME_NODE_SOURCE_MAJOR = 22;
 
 interface WslStatus {
   wslInstalled: boolean;
@@ -43,6 +45,12 @@ interface WslStatus {
   distroInstalled: boolean;
   distroReachable: boolean;
   distro: string;
+}
+
+interface NodeRuntimeStatus {
+  nodeInstalled: boolean;
+  npmInstalled: boolean;
+  nodeVersion: string | null;
 }
 
 export class EnvironmentService {
@@ -113,7 +121,11 @@ export class EnvironmentService {
     if (!status.nodeInstalled || !status.npmInstalled) {
       status.notes.push("Runtime dependencies in WSL are not ready yet.");
       if (!status.nodeInstalled) {
-        status.notes.push("node command is missing in WSL.");
+        if (runtime.nodeVersion) {
+          status.notes.push(`Node.js ${runtime.nodeVersion} is too old. OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+ in WSL.`);
+        } else {
+          status.notes.push("node command is missing in WSL.");
+        }
       }
       if (!status.npmInstalled) {
         status.notes.push("npm command is missing in WSL.");
@@ -537,6 +549,12 @@ export class EnvironmentService {
 
     const runtime = await this.getNodeRuntimeStatus(distro);
     if (!runtime.nodeInstalled || !runtime.npmInstalled) {
+      if (runtime.nodeVersion && !runtime.nodeInstalled) {
+        onLog?.(
+          `Detected Node.js ${runtime.nodeVersion} in WSL, but OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+. Upgrading Node.js...`,
+          "stdout"
+        );
+      }
       onLog?.(`Installing runtime dependencies in WSL distro ${distro}...`, "stdout");
       const runtimeInstall = await this.installWslRuntimeDependencies(distro, onLog);
       lastResult = runtimeInstall;
@@ -551,11 +569,14 @@ export class EnvironmentService {
 
     const finalRuntime = await this.getNodeRuntimeStatus(distro);
     if (!finalRuntime.nodeInstalled || !finalRuntime.npmInstalled) {
+      const versionHint = finalRuntime.nodeVersion
+        ? ` Detected Node.js ${finalRuntime.nodeVersion}; OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+ in WSL.`
+        : "";
       return {
         ok: false,
         code: lastResult?.code ?? null,
         stdout: lastResult?.stdout ?? "",
-        stderr: "WSL runtime install finished but node/npm are still unavailable. Open Ubuntu once, then retry setup."
+        stderr: `WSL runtime install finished but Node.js >=${MIN_OPENCLAW_WSL_NODE_MAJOR} and npm are still unavailable.${versionHint} Open Ubuntu once, then retry setup.`
       };
     }
 
@@ -627,11 +648,14 @@ export class EnvironmentService {
 
     const runtime = await this.getNodeRuntimeStatus(distro);
     if (!runtime.nodeInstalled || !runtime.npmInstalled) {
+      const detail = runtime.nodeVersion
+        ? `Detected Node.js ${runtime.nodeVersion}, but OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+ in WSL. `
+        : "";
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Runtime dependencies are missing in WSL. Install WSL runtime first."
+        stderr: `${detail}Runtime dependencies are missing in WSL. Install WSL runtime first.`
       };
     }
 
@@ -754,7 +778,14 @@ export class EnvironmentService {
       "set -e",
       "export DEBIAN_FRONTEND=noninteractive",
       "apt-get update",
-      "apt-get install -y nodejs npm ca-certificates curl file git build-essential procps",
+      "apt-get install -y ca-certificates curl gnupg file git build-essential procps",
+      "install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg",
+      "chmod a+r /etc/apt/keyrings/nodesource.gpg",
+      `echo \"deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${WSL_RUNTIME_NODE_SOURCE_MAJOR}.x nodistro main\" > /etc/apt/sources.list.d/nodesource.list`,
+      "apt-get update",
+      "apt-get install -y nodejs",
+      "if ! command -v npm >/dev/null 2>&1; then apt-get install -y npm; fi",
       "if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then ln -sf \"$(command -v nodejs)\" /usr/local/bin/node || true; fi"
     ].join(" && ");
     return onLog
@@ -786,6 +817,9 @@ export class EnvironmentService {
     const blob = output.toLowerCase();
     if (/temporary failure resolving|could not resolve|network|timed out|timeout/.test(blob)) {
       return "Network issue detected while installing runtime packages in WSL.";
+    }
+    if (/nodesource|deb\.nodesource\.com|keyring|gpg: no valid openpgp data found/.test(blob)) {
+      return "Node.js repository bootstrap failed in WSL. Check outbound HTTPS access to deb.nodesource.com and retry.";
     }
     if (/dpkg was interrupted|apt --fix-broken/.test(blob)) {
       return "WSL package manager is in a broken state. Run apt repair in Ubuntu and retry.";
@@ -1116,16 +1150,38 @@ export class EnvironmentService {
     return /permission denied|operation not permitted|not writable|writable by your user|cannot create|can't create|failed during: .*mkdir|need sudo|change the ownership|sudo chown/.test(blob);
   }
 
-  private async getNodeRuntimeStatus(distro: string): Promise<{ nodeInstalled: boolean; npmInstalled: boolean }> {
+  private async getNodeRuntimeStatus(distro: string): Promise<NodeRuntimeStatus> {
     const nodeCheck = await this.runWslBash(distro, "node --version", 20_000);
     const nodejsCheck = nodeCheck.ok
       ? nodeCheck
       : await this.runWslBash(distro, "nodejs --version", 20_000);
     const npmCheck = await this.runWslBash(distro, "npm --version", 20_000);
+
+    const nodeVersion = nodejsCheck.ok ? this.extractCommandLastLine(nodejsCheck.stdout) : null;
+    const nodeMajor = nodeVersion ? this.parseNodeMajor(nodeVersion) : null;
+
     return {
-      nodeInstalled: nodeCheck.ok || nodejsCheck.ok,
-      npmInstalled: npmCheck.ok
+      nodeInstalled: nodeMajor !== null && nodeMajor >= MIN_OPENCLAW_WSL_NODE_MAJOR,
+      npmInstalled: npmCheck.ok,
+      nodeVersion
     };
+  }
+
+  private extractCommandLastLine(output: string): string | null {
+    const normalized = this.normalizeWslOutput(output)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return normalized.length > 0 ? normalized[normalized.length - 1] : null;
+  }
+
+  private parseNodeMajor(version: string): number | null {
+    const match = version.trim().match(/^v?(\d+)/i);
+    if (!match) {
+      return null;
+    }
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private async isBrewAvailableForSetup(distro: string): Promise<boolean> {
