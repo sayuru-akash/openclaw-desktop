@@ -5,6 +5,7 @@ export interface InferredModelStatus {
   model: string;
   availableProviders: string[];
   modelsByProvider: Record<string, string[]>;
+  modelDisplayNames: Record<string, string>;
   detail: string;
 }
 
@@ -71,14 +72,31 @@ export function inferModelStatusFromPayload(payload: unknown): InferredModelStat
   ]);
   const availableProviders = collectProviders(payload);
   const modelsByProvider = collectProviderModels(payload);
+  const modelDisplayNames = collectModelDisplayNames(payload);
 
   return {
     provider: provider || "",
     model: model || "",
     availableProviders,
     modelsByProvider,
+    modelDisplayNames,
     detail: provider && model ? `Using ${provider} / ${model}` : "Model is not configured yet."
   };
+}
+
+function extractProviderFromKey(key: unknown): string {
+  if (typeof key !== "string") {
+    return "";
+  }
+  const slashIndex = key.indexOf("/");
+  return slashIndex > 0 ? key.slice(0, slashIndex).trim() : "";
+}
+
+function extractModelFromKey(key: unknown): string {
+  if (typeof key !== "string") {
+    return "";
+  }
+  return key.trim();
 }
 
 function collectProviders(payload: unknown): string[] {
@@ -100,6 +118,9 @@ function collectProviders(payload: unknown): string[] {
     register(record.providerId);
     register(record.providerKey);
 
+    // Extract provider from "provider/model" key format (e.g. "anthropic/claude-opus-4-6")
+    register(extractProviderFromKey(record.key));
+
     const providersArray = Array.isArray(record.providers) ? record.providers : [];
     for (const entry of providersArray) {
       if (!entry || typeof entry !== "object") {
@@ -111,6 +132,7 @@ function collectProviders(payload: unknown): string[] {
       register(providerRecord.providerKey);
       register(providerRecord.id);
       register(providerRecord.name);
+      register(extractProviderFromKey(providerRecord.key));
     }
   });
 
@@ -171,13 +193,15 @@ function collectProviderModels(payload: unknown): Record<string, string[]> {
         ? record.providerId
         : typeof record.providerKey === "string"
           ? record.providerKey
-          : "";
+          : extractProviderFromKey(record.key) || "";
 
     if (providerRaw) {
       register(providerRaw, record.model);
       register(providerRaw, record.modelId);
       register(providerRaw, record.selectedModel);
       register(providerRaw, record.defaultModel);
+      // Register the full key (e.g. "anthropic/claude-opus-4-6") as a model identifier
+      register(providerRaw, extractModelFromKey(record.key));
       registerFromModelsArray(providerRaw, record.models);
     }
 
@@ -191,12 +215,14 @@ function collectProviderModels(payload: unknown): Record<string, string[]> {
       const nestedProvider = providerRecord.provider
         ?? providerRecord.providerId
         ?? providerRecord.providerKey
+        ?? extractProviderFromKey(providerRecord.key)
         ?? providerRecord.id
         ?? providerRecord.name;
       register(nestedProvider, providerRecord.model);
       register(nestedProvider, providerRecord.modelId);
       register(nestedProvider, providerRecord.selectedModel);
       register(nestedProvider, providerRecord.defaultModel);
+      register(nestedProvider, extractModelFromKey(providerRecord.key));
       registerFromModelsArray(nestedProvider, providerRecord.models);
     }
   });
@@ -206,6 +232,20 @@ function collectProviderModels(payload: unknown): Record<string, string[]> {
     result[provider] = [...models].sort((left, right) => left.localeCompare(right));
   }
   return result;
+}
+
+function collectModelDisplayNames(payload: unknown): Record<string, string> {
+  const names: Record<string, string> = {};
+  walkPayload(payload, (node) => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (typeof record.key === "string" && record.key.trim() && typeof record.name === "string" && record.name.trim()) {
+      names[record.key.trim()] = record.name.trim();
+    }
+  });
+  return names;
 }
 
 function findFirstStringValue(payload: unknown, keys: string[]): string {

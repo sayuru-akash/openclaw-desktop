@@ -450,13 +450,18 @@ function getModelCatalogFromStatus(status) {
     modelsByProvider[provider] = [...new Set(modelsByProvider[provider])].sort((left, right) => left.localeCompare(right));
   }
 
+  const modelDisplayNames = (status && status.modelDisplayNames && typeof status.modelDisplayNames === "object")
+    ? status.modelDisplayNames
+    : {};
+
   return {
     providers: [...providers].sort((left, right) => left.localeCompare(right)),
-    modelsByProvider
+    modelsByProvider,
+    modelDisplayNames
   };
 }
 
-function setSelectOptions(selectNode, options, placeholder, preferredValue = "") {
+function setSelectOptions(selectNode, options, placeholder, preferredValue = "", displayNames = {}) {
   const normalizedPreferred = typeof preferredValue === "string" ? preferredValue.trim() : "";
   const values = [...new Set(options.map((item) => String(item || "").trim()).filter(Boolean))];
   if (normalizedPreferred && !values.includes(normalizedPreferred)) {
@@ -474,7 +479,7 @@ function setSelectOptions(selectNode, options, placeholder, preferredValue = "")
   for (const value of values) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = displayNames[value] || value;
     selectNode.appendChild(option);
   }
 
@@ -519,7 +524,8 @@ function syncModelSelectPair(pair, catalog, preferredProvider = "", preferredMod
     pair.model,
     models,
     selectedProvider ? (models.length ? "Select model" : "No models for provider") : "Select provider first",
-    preferredModel
+    preferredModel,
+    catalog.modelDisplayNames || {}
   );
 }
 

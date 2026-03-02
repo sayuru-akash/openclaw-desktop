@@ -13,7 +13,7 @@ import type {
   WizardStartResult,
   WizardStatusResult
 } from "../../shared/types";
-import { access } from "node:fs/promises";
+import { access, appendFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand, runCommandStreaming } from "./command-runner";
@@ -242,12 +242,47 @@ export class EnvironmentService {
     return this.runOpenClaw(["gateway", "status"]);
   }
 
-  public gatewayStart(): Promise<CommandResult> {
+  public async gatewayStart(): Promise<CommandResult> {
+    await this.ensureGatewayModeLocal();
     return this.runOpenClaw(["gateway", "start"]);
   }
 
-  public gatewayStartStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+  public async gatewayStartStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+    await this.ensureGatewayModeLocal();
     return this.runOpenClawStreaming(["gateway", "start"], onLog);
+  }
+
+  /**
+   * Ensures gateway.mode is set to "local" in the openclaw config.
+   * Without this, the gateway refuses to start with:
+   * "Gateway start blocked: set gateway.mode=local"
+   */
+  private async ensureGatewayModeLocal(): Promise<void> {
+    const script = [
+      "CONFIG=\"$HOME/.openclaw/openclaw.json\"",
+      "if [ ! -f \"$CONFIG\" ]; then exit 0; fi",
+      "node -e \"" +
+        "const fs=require('fs');" +
+        "const p=process.argv[1];" +
+        "try{const c=JSON.parse(fs.readFileSync(p,'utf8'));" +
+        "if(c.gateway&&c.gateway.mode==='local'){process.exit(0)}" +
+        "if(!c.gateway)c.gateway={};" +
+        "c.gateway.mode='local';" +
+        "fs.writeFileSync(p,JSON.stringify(c,null,2)+'\\n');" +
+        "console.log('Set gateway.mode=local')}" +
+        "catch(e){console.error(e.message)}\" \"$CONFIG\""
+    ].join("; ");
+
+    if (process.platform === "win32") {
+      const wslStatus = await this.getWslStatus();
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+        const cliUser = await this.resolveWslBrewUser(wslStatus.distro);
+        await this.runWslBash(wslStatus.distro, script, 15_000, cliUser || undefined);
+        return;
+      }
+    }
+
+    await runCommand("bash", ["-c", script], { env: this.buildCommandEnv() });
   }
 
   public gatewayStop(): Promise<CommandResult> {
@@ -319,7 +354,7 @@ export class EnvironmentService {
   }
 
   public async getModelStatus(): Promise<ModelStatusResult> {
-    const result = await this.runOpenClaw(["models", "list", "--json"]);
+    const result = await this.runOpenClaw(["models", "list", "--all", "--json"]);
     if (!result.ok) {
       throw new Error(result.stderr || result.stdout || "Unable to load model status.");
     }
@@ -332,26 +367,82 @@ export class EnvironmentService {
       model: inferred.model,
       availableProviders: inferred.availableProviders,
       modelsByProvider: inferred.modelsByProvider,
+      modelDisplayNames: inferred.modelDisplayNames,
       detail: inferred.detail
     };
   }
 
-  public async applyModelSelection(provider: string, model: string): Promise<ModelStatusResult> {
+  public async saveModelApiKey(provider: string, apiKey: string): Promise<CommandResult> {
     const normalizedProvider = provider.trim();
+    const normalizedKey = apiKey.trim();
+
+    if (!normalizedProvider || !normalizedKey) {
+      throw new Error("Provider and API key are required.");
+    }
+
+    // The CLI's paste-token command uses an interactive TUI prompt that cannot
+    // be driven non-interactively. Instead, we resolve the auth-profiles.json
+    // path from `openclaw models status --json` and write the profile directly.
+    const profileId = `${normalizedProvider}:manual`;
+    const jsonPayload = JSON.stringify({
+      id: profileId,
+      provider: normalizedProvider,
+      type: "api-key",
+      token: normalizedKey,
+      createdAt: new Date().toISOString()
+    });
+
+    const quotedPayload = this.quoteForBash(jsonPayload);
+    const resolveAndWrite = [
+      this.buildBrewShellenvBootstrapCommand(),
+      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
+      // Resolve the store path from the CLI
+      "export STORE_PATH=$(openclaw models status --json 2>/dev/null | node -e \"process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{console.log(JSON.parse(d).auth.storePath)}catch{process.exit(1)}})\")",
+      "if [ -z \"$STORE_PATH\" ]; then echo \"Could not resolve auth store path.\" >&2; exit 1; fi",
+      "echo \"Resolved auth store: $STORE_PATH\"",
+      // Ensure parent directory exists
+      "mkdir -p \"$(dirname \"$STORE_PATH\")\"",
+      // Read existing file or start with empty array, then upsert the profile
+      // Pass store path as argv[1] to avoid env var issues
+      `node -e "
+        const fs = require('fs');
+        const storePath = process.argv[1];
+        const newProfile = ${quotedPayload};
+        let profiles = [];
+        try { profiles = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch {}
+        if (!Array.isArray(profiles)) profiles = [];
+        const idx = profiles.findIndex(p => p.id === newProfile.id);
+        if (idx >= 0) { profiles[idx] = newProfile; } else { profiles.push(newProfile); }
+        fs.writeFileSync(storePath, JSON.stringify(profiles, null, 2) + '\\n');
+        console.log('Saved auth profile: ' + newProfile.id);
+      " "$STORE_PATH"`
+    ].join("; ");
+
+    if (process.platform === "win32") {
+      const wslStatus = await this.getWslStatus();
+      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+        const cliUser = await this.resolveWslBrewUser(wslStatus.distro);
+        return this.runWslBash(wslStatus.distro, resolveAndWrite, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
+      }
+    }
+
+    // Non-WSL fallback
+    return runCommand("bash", ["-c", resolveAndWrite], { env: this.buildCommandEnv() });
+  }
+
+  public async applyModelSelection(provider: string, model: string): Promise<ModelStatusResult> {
     const normalizedModel = model.trim();
 
-    if (!normalizedProvider || !normalizedModel) {
+    if (!normalizedModel) {
       throw new Error("Provider and model are required.");
     }
 
+    // CLI expects: openclaw models set <model-key>
+    // The model key already includes the provider (e.g. "anthropic/claude-opus-4-6")
     const result = await this.runOpenClaw([
       "models",
       "set",
-      "--provider",
-      normalizedProvider,
-      "--model",
-      normalizedModel,
-      "--json"
+      normalizedModel
     ]);
 
     if (!result.ok) {
@@ -582,8 +673,27 @@ export class EnvironmentService {
 
     const brewInstalled = await this.isBrewAvailableForSetup(distro);
     if (!brewInstalled) {
+      const brewLog = async (msg: string) => {
+        const logDir = path.join(os.homedir(), ".openclaw-desktop");
+        await mkdir(logDir, { recursive: true }).catch(() => {});
+        await appendFile(path.join(logDir, "brew-install.log"), `[${new Date().toISOString()}] ${msg}\n`).catch(() => {});
+      };
+
+      await brewLog("=== Homebrew install started ===");
+      onLog?.(`Ensuring Homebrew system dependencies in WSL distro ${distro}...`, "stdout");
+      const brewDepsInstall = await this.installWslBrewDependencies(distro, onLog);
+      await brewLog(`brewDepsInstall ok=${brewDepsInstall.ok} code=${brewDepsInstall.code}\nstdout: ${brewDepsInstall.stdout}\nstderr: ${brewDepsInstall.stderr}`);
+      if (!brewDepsInstall.ok) {
+        const detail = [brewDepsInstall.stderr, brewDepsInstall.stdout].filter(Boolean).join("\n").trim();
+        return {
+          ...brewDepsInstall,
+          stderr: `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim()
+        };
+      }
+
       onLog?.(`Installing Homebrew in WSL distro ${distro}...`, "stdout");
       const brewInstall = await this.installWslBrew(distro, onLog);
+      await brewLog(`brewInstall ok=${brewInstall.ok} code=${brewInstall.code}\nstdout: ${brewInstall.stdout}\nstderr: ${brewInstall.stderr}`);
       lastResult = brewInstall;
       if (!brewInstall.ok) {
         const detail = [brewInstall.stderr, brewInstall.stdout].filter(Boolean).join("\n").trim();
@@ -964,6 +1074,22 @@ export class EnvironmentService {
     return check.ok;
   }
 
+  private async installWslBrewDependencies(
+    distro: string,
+    onLog?: (line: string, stream: "stdout" | "stderr") => void
+  ): Promise<CommandResult> {
+    const script = [
+      "set -e",
+      "export DEBIAN_FRONTEND=noninteractive",
+      "if ! dpkg --configure -a; then apt-get -f install -y; dpkg --configure -a; fi",
+      "apt-get update",
+      "apt-get install -y ca-certificates curl gnupg file git build-essential procps"
+    ].join(" && ");
+    return onLog
+      ? this.runWslBashStreaming(distro, script, onLog, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root")
+      : this.runWslBash(distro, script, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root");
+  }
+
   private async installWslBrew(
     distro: string,
     onLog?: (line: string, stream: "stdout" | "stderr") => void
@@ -995,10 +1121,7 @@ export class EnvironmentService {
       "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
       "export NONINTERACTIVE=1",
       "export CI=1",
-      "tmp_script=\"$(mktemp)\"",
-      "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o \"$tmp_script\"",
-      "/bin/bash \"$tmp_script\"",
-      "rm -f \"$tmp_script\"",
+      "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash",
       "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
       `if [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; exit 0; fi`,
       "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
@@ -1470,41 +1593,73 @@ export class EnvironmentService {
     return [managed, "openclaw"];
   }
 
-  private runWslBash(
+  private async runWslBash(
     distro: string,
     command: string,
     timeoutMs: number,
     user?: string
   ): Promise<CommandResult> {
-    const args = ["-d", distro];
-    if (user) {
-      args.push("-u", user);
+    const scriptPath = await this.writeWslTempScript(distro, command);
+    try {
+      const args = ["-d", distro];
+      if (user) {
+        args.push("-u", user);
+      }
+      args.push("--", "bash", "-l", scriptPath);
+      return await runCommand("wsl.exe", args, {
+        timeoutMs,
+        env: this.buildCommandEnv()
+      });
+    } finally {
+      this.removeWslTempScript(distro, scriptPath);
     }
-    args.push("--", "bash", "-lc", command);
-    return runCommand("wsl.exe", args, {
-      timeoutMs,
-      env: this.buildCommandEnv()
-    });
   }
 
-  private runWslBashStreaming(
+  private async runWslBashStreaming(
     distro: string,
     command: string,
     onLog: (line: string, stream: "stdout" | "stderr") => void,
     timeoutMs: number,
     user?: string
   ): Promise<CommandResult> {
-    const args = ["-d", distro];
-    if (user) {
-      args.push("-u", user);
+    const scriptPath = await this.writeWslTempScript(distro, command);
+    try {
+      const args = ["-d", distro];
+      if (user) {
+        args.push("-u", user);
+      }
+      args.push("--", "bash", "-l", scriptPath);
+      return await runCommandStreaming("wsl.exe", args, {
+        timeoutMs,
+        env: this.buildCommandEnv(),
+        onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+      });
+    } finally {
+      this.removeWslTempScript(distro, scriptPath);
     }
-    args.push("--", "bash", "-lc", command);
-    return runCommandStreaming("wsl.exe", args, {
-      timeoutMs,
-      env: this.buildCommandEnv(),
-      onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-      onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+  }
+
+  private async writeWslTempScript(distro: string, command: string): Promise<string> {
+    const scriptName = `_oc_setup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.sh`;
+    const wslPath = `/tmp/${scriptName}`;
+    // Write the script into WSL /tmp via a simple echo. The command content is
+    // base64-encoded to avoid any quoting/escaping issues with wsl.exe argument
+    // forwarding.
+    const encoded = Buffer.from(command, "utf8").toString("base64");
+    await runCommand("wsl.exe", ["-d", distro, "--", "bash", "-c",
+      `echo ${encoded} | base64 -d > ${wslPath} && chmod +x ${wslPath}`], {
+      timeoutMs: 15_000,
+      env: this.buildCommandEnv()
     });
+    return wslPath;
+  }
+
+  private removeWslTempScript(distro: string, wslPath: string): void {
+    runCommand("wsl.exe", ["-d", distro, "--", "rm", "-f", wslPath], {
+      timeoutMs: 10_000,
+      env: this.buildCommandEnv()
+    }).catch(() => {});
   }
 
   private buildCommandEnv(): NodeJS.ProcessEnv {

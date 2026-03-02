@@ -18,6 +18,7 @@ const api: RendererApi = {
   configureTelegramBot: (token: string) => ipcRenderer.invoke("telegram:configure", token),
   getModelStatus: () => ipcRenderer.invoke("models:get-status"),
   applyModelSelection: (provider: string, model: string) => ipcRenderer.invoke("models:apply", provider, model),
+  saveModelApiKey: (provider: string, apiKey: string) => ipcRenderer.invoke("models:save-api-key", provider, apiKey),
   getWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName) =>
     ipcRenderer.invoke("workspace-files:get", workspacePath, fileName),
   saveWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName, content: string) =>

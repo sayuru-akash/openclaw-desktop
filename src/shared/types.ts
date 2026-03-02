@@ -132,6 +132,8 @@ export interface ModelStatusResult {
   model: string;
   availableProviders: string[];
   modelsByProvider: Record<string, string[]>;
+  /** Maps model key (e.g. "anthropic/claude-opus-4-6") to friendly name (e.g. "Claude Opus 4.6") */
+  modelDisplayNames: Record<string, string>;
   detail: string;
 }
 
@@ -202,6 +204,7 @@ export interface RendererApi {
   configureTelegramBot: (token: string) => Promise<ChannelStatusItem>;
   getModelStatus: () => Promise<ModelStatusResult>;
   applyModelSelection: (provider: string, model: string) => Promise<ModelStatusResult>;
+  saveModelApiKey: (provider: string, apiKey: string) => Promise<CommandResult>;
   getWorkspaceFile: (workspacePath: string, fileName: WorkspaceEditableFileName) => Promise<WorkspaceFilePayload>;
   saveWorkspaceFile: (
     workspacePath: string,

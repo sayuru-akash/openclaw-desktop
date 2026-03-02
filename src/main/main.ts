@@ -659,6 +659,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("models:apply", (_event, provider: string, model: string) =>
     environmentService.applyModelSelection(provider, model)
   );
+  ipcMain.handle("models:save-api-key", (_event, provider: string, apiKey: string) =>
+    environmentService.saveModelApiKey(provider, apiKey)
+  );
   ipcMain.handle("workspace-files:get", (_event, workspacePath: string, fileName: WorkspaceEditableFileName) =>
     workspaceFilesService.getFile(workspacePath, fileName)
   );

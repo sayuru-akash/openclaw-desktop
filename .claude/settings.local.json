@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe bash:*)",
+      "Bash(node:*)",
+      "Bash(wsl.exe:*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}

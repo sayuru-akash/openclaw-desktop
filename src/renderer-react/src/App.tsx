@@ -276,7 +276,7 @@ function toFriendlyFailureMessage(message: string): string {
 
 export function App() {
   const [workspace, setWorkspace] = useState<Workspace>("setup");
-  const [pane, setPane] = useState<FeaturePane>("onboarding");
+  const [pane, setPane] = useState<FeaturePane>("channels");
   const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
   const [setupState, setSetupState] = useState<SetupState>(DEFAULT_SETUP);
   const [configDraft, setConfigDraft] = useState<AppConfig | null>(null);
@@ -291,6 +291,7 @@ export function App() {
   const [workspaceFileEditor, setWorkspaceFileEditor] = useState("");
   const [manageProvider, setManageProvider] = useState("");
   const [manageModel, setManageModel] = useState("");
+  const [manageApiKey, setManageApiKey] = useState("");
   const [telegramToken, setTelegramToken] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [actionProgressLabel, setActionProgressLabel] = useState("");
@@ -495,6 +496,9 @@ export function App() {
               style={{ width: `${Math.max(0, Math.min(100, actionProgressValue))}%` }}
             />
           </div>
+          {actionProgressState === "done" ? (
+            <p className="text-xs text-green-600 dark:text-green-400">{actionProgressLabel} completed successfully.</p>
+          ) : null}
           {actionProgressState === "failed" && error ? (
             <p className="text-xs text-[#f3c2c8]">{toFriendlyFailureMessage(error)}</p>
           ) : null}
@@ -912,11 +916,25 @@ export function App() {
       throw new Error("Select provider and model first.");
     }
 
+    if (manageApiKey.trim().length >= 8) {
+      appendLog(`Saving API key for provider: ${manageProvider}...`);
+      const keyResult = await window.openclaw.saveModelApiKey(manageProvider, manageApiKey.trim());
+      appendLog(`Save API key result: ok=${keyResult.ok}, code=${keyResult.code}, stdout=${keyResult.stdout.slice(0, 200)}, stderr=${keyResult.stderr.slice(0, 200)}`);
+      if (!keyResult.ok) {
+        throw new Error(keyResult.stderr || keyResult.stdout || "Failed to save API key.");
+      }
+    } else if (manageApiKey.trim().length > 0) {
+      appendLog("API key too short (< 8 chars), skipping save.");
+    }
+
+    appendLog(`Applying model selection: ${manageProvider} / ${manageModel}...`);
     const status = await window.openclaw.applyModelSelection(manageProvider, manageModel);
+    appendLog(`Model applied: provider=${status.provider}, model=${status.model}`);
     setModelStatus(status);
     const nextConfig = await window.openclaw.saveConfig({
       modelProvider: manageProvider,
-      modelName: manageModel
+      modelName: manageModel,
+      modelApiKey: manageApiKey.trim()
     });
     setConfigDraft(nextConfig);
     appendLog(status.detail);
@@ -1094,16 +1112,38 @@ export function App() {
       });
   }, [clearChatTabTimer, workspace]);
 
+  const [gatewayHttpReady, setGatewayHttpReady] = useState(false);
+
+  useEffect(() => {
+    if (gatewayReady !== true) {
+      setGatewayHttpReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        const response = await fetch(CONTROL_UI_URL, { method: "HEAD", signal: AbortSignal.timeout(3000) });
+        if (!cancelled && response.ok) {
+          setGatewayHttpReady(true);
+        }
+      } catch {
+        // Gateway process running but HTTP not ready yet — stay false
+      }
+    };
+
+    void probe();
+    const interval = setInterval(() => { void probe(); }, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [gatewayReady]);
+
   const updateControlSurface = useCallback(() => {
-    const ready = gatewayReady === true;
+    const ready = gatewayHttpReady;
     const controlWebview = controlWebviewRef.current;
 
     if (!ready) {
-      setControlStatusText("Gateway is not ready yet.");
+      setControlStatusText(gatewayReady ? "Gateway process is running but the web interface is not responding." : "Gateway is not running.");
       setControlFallbackVisible(true);
-      if (controlWebview?.getAttribute && controlWebview.getAttribute("src") !== "about:blank") {
-        controlWebview.setAttribute("src", "about:blank");
-      }
       return;
     }
 
@@ -1112,18 +1152,15 @@ export function App() {
     if (controlWebview?.getAttribute && controlWebview.getAttribute("src") !== CONTROL_UI_URL) {
       controlWebview.setAttribute("src", CONTROL_UI_URL);
     }
-  }, [gatewayReady]);
+  }, [gatewayHttpReady, gatewayReady]);
 
   const updateChatSurface = useCallback((ensureChatTab = false) => {
-    const ready = gatewayReady === true;
+    const ready = gatewayHttpReady;
     const chatWebview = chatWebviewRef.current;
 
     if (!ready) {
-      setChatStatusText("Gateway is not ready yet.");
+      setChatStatusText(gatewayReady ? "Gateway process is running but the web interface is not responding." : "Gateway is not running.");
       setChatFallbackVisible(true);
-      if (chatWebview?.getAttribute && chatWebview.getAttribute("src") !== "about:blank") {
-        chatWebview.setAttribute("src", "about:blank");
-      }
       return;
     }
 
@@ -1137,7 +1174,7 @@ export function App() {
     if (ensureChatTab) {
       ensureChatTabSelected(0);
     }
-  }, [ensureChatTabSelected, gatewayReady]);
+  }, [ensureChatTabSelected, gatewayHttpReady, gatewayReady]);
 
   useEffect(() => {
     if (onboardingLocked) {
@@ -1145,8 +1182,7 @@ export function App() {
     }
 
     if (gatewayReady === true && workspace === "setup") {
-      setWorkspace("chat");
-      appendLog("Gateway is ready. Switched to in-app Chat.");
+      appendLog("Gateway is ready. Switch to Chat when you want to use it.");
     }
   }, [appendLog, gatewayReady, onboardingLocked, workspace]);
 
@@ -1441,10 +1477,23 @@ export function App() {
             <Select value={manageModel} onChange={(event) => setManageModel(event.target.value)}>
               <option value="">Select model</option>
               {modelOptions.map((model) => (
-                <option key={model} value={model}>{model}</option>
+                <option key={model} value={model}>{modelStatus?.modelDisplayNames?.[model] || model}</option>
               ))}
             </Select>
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">API Key</p>
+          <Input
+            type="password"
+            placeholder="Paste API key"
+            value={manageApiKey}
+            onChange={(event) => setManageApiKey(event.target.value)}
+          />
+          {manageApiKey.length > 0 && manageApiKey.trim().length < 8 && (
+            <p className="text-xs text-destructive">API key must be at least 8 characters.</p>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -1535,7 +1584,7 @@ export function App() {
             >
               <option value="">Select model</option>
               {settingsModelOptions.map((model) => (
-                <option key={model} value={model}>{model}</option>
+                <option key={model} value={model}>{modelStatus?.modelDisplayNames?.[model] || model}</option>
               ))}
             </Select>
           </div>
@@ -1643,6 +1692,14 @@ export function App() {
         <div>
           <h3 className="text-base font-semibold">{selectedNav?.label ?? "Setup"}</h3>
         </div>
+        {renderActionProgress()}
+        {error && !showActionProgress ? (
+          <Card className="border-dashed border-destructive">
+            <CardContent className="pt-4">
+              <p className="text-xs text-destructive">{error}</p>
+            </CardContent>
+          </Card>
+        ) : null}
         {renderSelectedPane()}
       </div>
     );
@@ -1652,10 +1709,10 @@ export function App() {
     const isChat = mode === "chat";
     const title = isChat ? "Chat" : "Control";
     const webviewRef = isChat ? chatWebviewRef : controlWebviewRef;
-    const ready = gatewayReady === true;
+    const ready = gatewayHttpReady;
     const statusText = isChat ? chatStatusText : controlStatusText;
     const fallbackVisible = isChat ? chatFallbackVisible : controlFallbackVisible;
-    const fallbackText = "Gateway is not ready. Start + Retry.";
+    const fallbackText = "Gateway is not ready. Start the gateway first.";
 
     return (
       <Card className="h-full">
@@ -1664,6 +1721,7 @@ export function App() {
           <CardDescription>{statusText}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {renderActionProgress()}
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => {
@@ -1703,13 +1761,31 @@ export function App() {
             <p className="text-xs text-[#d2bb86]">{fallbackText}</p>
           ) : null}
 
-          <webview
-            ref={webviewRef}
-            className="h-[calc(100vh-16.5rem)] w-full rounded-sm border border-border bg-[#141414]"
-            src={ready ? CONTROL_UI_URL : "about:blank"}
-            allowpopups={false}
-            partition="persist:openclaw-control"
-          />
+          {ready ? (
+            <webview
+              ref={webviewRef}
+              className="h-[calc(100vh-16.5rem)] w-full rounded-sm border border-border bg-[#141414]"
+              src={CONTROL_UI_URL}
+              allowpopups={false}
+              partition="persist:openclaw-control"
+            />
+          ) : (
+            <div className="flex h-[calc(100vh-16.5rem)] w-full items-center justify-center rounded-sm border border-border bg-muted/30">
+              <div className="text-center space-y-3">
+                {gatewayReady ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">Gateway process is running but the web interface is not responding.</p>
+                    <p className="text-xs text-muted-foreground">This is usually caused by a missing API key. Go to Setup &gt; Models to configure your model and API key, then restart the gateway.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">Gateway is not running.</p>
+                    <p className="text-xs text-muted-foreground">Start the gateway to use {title}.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -1836,6 +1912,10 @@ export function App() {
       }
       if (!manageProvider || !manageModel) {
         setError("Select provider and model.");
+        return;
+      }
+      if (manageApiKey.trim().length > 0 && manageApiKey.trim().length < 8) {
+        setError("API key must be at least 8 characters.");
         return;
       }
       const ok = await applyModelSelection();
@@ -2086,9 +2166,21 @@ export function App() {
                       <Select value={manageModel} onChange={(event) => setManageModel(event.target.value)}>
                         <option value="">Select model</option>
                         {modelOptions.map((model) => (
-                          <option key={model} value={model}>{model}</option>
+                          <option key={model} value={model}>{modelStatus?.modelDisplayNames?.[model] || model}</option>
                         ))}
                       </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">API Key</p>
+                      <Input
+                        type="password"
+                        placeholder="Paste API key"
+                        value={manageApiKey}
+                        onChange={(event) => setManageApiKey(event.target.value)}
+                      />
+                      {manageApiKey.length > 0 && manageApiKey.trim().length < 8 && (
+                        <p className="text-xs text-destructive">API key must be at least 8 characters.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -2188,7 +2280,9 @@ export function App() {
             <SidebarGroup>
               {!sidebarCollapsed && <SidebarGroupLabel>Sections</SidebarGroupLabel>}
               <SidebarGroupContent>
-                {navItems.map((item) => {
+                {navItems
+                  .filter((item) => !(item.key === "onboarding" && configDraft?.onboardingCompleted))
+                  .map((item) => {
                   const Icon = item.icon;
                   const active = workspace === "setup" && pane === item.key;
                   return (
