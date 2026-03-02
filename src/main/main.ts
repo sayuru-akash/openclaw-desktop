@@ -298,7 +298,6 @@ function createWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true,
       preload: resolvePreloadFile()
     }
   });
@@ -733,6 +732,41 @@ function registerIpcHandlers(): void {
     await refreshTrayGatewayStatus(false);
     return result;
   });
+  ipcMain.handle("gateway:call", async (_event, method: string, params: unknown, requestId?: string) => {
+    const rid = requestId || `gw-main-${Date.now()}`;
+    const startedAt = Date.now();
+    console.info("[gateway:call]", {
+      event: "start",
+      requestId: rid,
+      method
+    });
+    try {
+      const result = await environmentService.gatewayCall(method, params);
+      const durationMs = Date.now() - startedAt;
+      console.info("[gateway:call]", {
+        event: "success",
+        requestId: rid,
+        method,
+        durationMs
+      });
+      // Debug: log response payload for chat methods so we can see the structure
+      if (method === "chat.send" || method === "chat.history") {
+        const snippet = JSON.stringify(result).slice(0, 1000);
+        console.info(`[gateway:call] ${method} payload:`, snippet);
+      }
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[gateway:call]", {
+        event: "error",
+        requestId: rid,
+        method,
+        durationMs: Date.now() - startedAt,
+        message
+      });
+      throw new Error(message);
+    }
+  });
 
   ipcMain.handle("auth:open-signin", async () => {
     const config = await configStore.load();
@@ -763,12 +797,25 @@ async function maybeAutoStartGateway(): Promise<void> {
   }
 
   const status = await environmentService.getEnvironmentStatus();
-  if (status.isWindows && status.openClawInstalled && !status.gatewayRunning) {
-    void environmentService.gatewayStart().catch((error) => {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.warn(`[startup] auto-start gateway failed: ${detail}`);
-    });
+  if (!status.isWindows || !status.openClawInstalled) {
+    return;
   }
+
+  // Check if the gateway process is already running (even if the port isn't
+  // ready yet). Starting a second instance while one is initializing causes
+  // lock conflicts and SIGTERM restart loops.
+  const gatewayStatus = await environmentService.gatewayStatus();
+  const processRunning = gatewayStatus.ok && /running|active|ok/i.test(`${gatewayStatus.stdout} ${gatewayStatus.stderr}`);
+  if (processRunning) {
+    console.info("[startup] gateway process already running; skipping auto-start.");
+    return;
+  }
+
+  console.info("[startup] gateway not running; auto-starting.");
+  void environmentService.gatewayStart().catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[startup] auto-start gateway failed: ${detail}`);
+  });
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

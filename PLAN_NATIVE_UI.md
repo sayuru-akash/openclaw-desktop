@@ -38,6 +38,8 @@ Onboarding wizard remains a full-screen takeover (unchanged). Right sidebar (Qui
 
 ### 1.1 Generic `gatewayCall` IPC bridge
 
+Status: ✅ Completed (March 2, 2026)
+
 Promote the existing private `runWizardCall` (environment.ts:1373) to a public method.
 
 **`src/main/services/environment.ts`** — Make `runWizardCall` public as `gatewayCall`:
@@ -88,6 +90,8 @@ gatewayCall: <T = unknown>(method: string, params?: unknown) => Promise<T>;
 
 ### 1.2 GatewayGuard component
 
+Status: ✅ Completed (March 2, 2026)
+
 **New `src/renderer-react/src/components/GatewayGuard.tsx`** — Wrapper that shows "Gateway Not Running" + Start button if gateway is down. All gateway-dependent pages use this:
 ```tsx
 export function GatewayGuard({ gatewayRunning, onStartGateway, isBusy, children }) {
@@ -109,6 +113,8 @@ export function GatewayGuard({ gatewayRunning, onStartGateway, isBusy, children 
 
 ### 1.3 Navigation restructure in App.tsx
 
+Status: ✅ Completed (March 2, 2026)
+
 **Remove:**
 - `Workspace` type, `workspace` state, `openWorkspace()` function
 - `CONTROL_UI_URL` constant
@@ -127,6 +133,8 @@ export function GatewayGuard({ gatewayRunning, onStartGateway, isBusy, children 
 **Keep in App.tsx:** onboarding wizard, global state, action handlers, right sidebar
 
 ### 1.4 Extract existing panes into page files
+
+Status: ✅ Completed (March 2, 2026)
 
 Mechanical extraction — move existing render functions to separate files, accept props:
 
@@ -148,6 +156,7 @@ Each page receives needed state and callbacks via props.
 All new pages follow the same pattern: call `window.openclaw.gatewayCall(method, params)`, render results in shadcn Card/Table components, wrap in `GatewayGuard`.
 
 ### 2.1 Overview Page (`src/renderer-react/src/pages/OverviewPage.tsx`)
+Status: ✅ Completed (March 2, 2026)
 - Calls `status` and `health` gateway RPCs on mount + polling every 10s
 - Shows: gateway health, uptime, version, active sessions count, connected channels, system notes
 - Gateway Start/Stop buttons
@@ -156,6 +165,7 @@ All new pages follow the same pattern: call `window.openclaw.gatewayCall(method,
 **Gateway RPC methods:** `status`, `health`
 
 ### 2.2 Sessions Page (`src/renderer-react/src/pages/SessionsPage.tsx`)
+Status: ✅ Completed (March 2, 2026)
 - Calls `sessions.list` on mount
 - Table: ID, Created, Last Active, Message Count
 - Row actions: Preview, Reset, Compact, Delete (each calls corresponding RPC)
@@ -164,6 +174,7 @@ All new pages follow the same pattern: call `window.openclaw.gatewayCall(method,
 **Gateway RPC methods:** `sessions.list`, `sessions.patch`, `sessions.delete`, `sessions.preview`, `sessions.reset`, `sessions.compact`
 
 ### 2.3 Cron Page (`src/renderer-react/src/pages/CronPage.tsx`)
+Status: ✅ Completed (March 2, 2026)
 - Calls `cron.list` on mount
 - Table: Name, Schedule, Last Run, Status
 - Row actions: Run Now, Edit, Remove
@@ -177,6 +188,7 @@ All new pages follow the same pattern: call `window.openclaw.gatewayCall(method,
 ## Phase 3: Chat Page
 
 ### Chat Page (`src/renderer-react/src/pages/ChatPage.tsx`)
+Status: ✅ Completed (March 2, 2026)
 
 **Non-streaming MVP** (CLI `gateway call` returns full response, no streaming):
 
@@ -239,15 +251,15 @@ const [sessionId, setSessionId] = useState<string | null>(null);
 
 ## Implementation Order
 
-1. **gatewayCall IPC bridge** (environment.ts, main.ts, preload.ts, types.ts)
-2. **GatewayGuard** component
-3. **Extract existing panes** into page files (Models, Files, Settings, Updates, Logs, Channels)
-4. **Restructure App.tsx** navigation (remove webviews, flat Page type, import pages)
-5. **OverviewPage** (validates gateway RPC works end-to-end)
-6. **SessionsPage**
-7. **CronPage**
-8. **ChatPage** (most complex)
-9. Remove `webviewTag: true` from main.ts BrowserWindow
+1. ✅ **gatewayCall IPC bridge** (environment.ts, main.ts, preload.ts, types.ts)
+2. ✅ **GatewayGuard** component
+3. ✅ **Extract existing panes** into page files (Models, Files, Settings, Updates, Logs, Channels)
+4. ✅ **Restructure App.tsx** navigation (remove webviews, flat Page type, import pages)
+5. ✅ **OverviewPage** (validates gateway RPC works end-to-end)
+6. ✅ **SessionsPage**
+7. ✅ **CronPage**
+8. ✅ **ChatPage** (most complex)
+9. ✅ Remove `webviewTag: true` from main.ts BrowserWindow
 
 ---
 
@@ -259,3 +271,15 @@ const [sessionId, setSessionId] = useState<string | null>(null);
 4. Start gateway → Overview shows health data
 5. Sessions/Cron pages load data from gateway
 6. Chat page: send message, receive response, abort works
+
+---
+
+## Post-Plan Follow-Up
+
+### Always-on gateway backend upgrade
+Status: Completed (March 2, 2026)
+
+- Windows always-on now uses a systemd-first strategy in WSL when available.
+- App provisions and enables a WSL user unit: `openclaw-gateway.service`.
+- If WSL systemd is unavailable/unusable, it falls back to Windows Task Scheduler.
+- Disable flow now turns off both systemd user service (best-effort) and scheduled task.

@@ -24,6 +24,7 @@ import {
 } from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
+const ALWAYS_ON_SYSTEMD_USER_SERVICE = "openclaw-gateway.service";
 const WSL_REBOOT_EXIT_CODES = [3010, 1641];
 const WSL_INSTALL_OK_EXIT_CODES = [...WSL_REBOOT_EXIT_CODES];
 const WSL_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -73,6 +74,7 @@ export class EnvironmentService {
       brewInstalled: false,
       openClawInstalled: false,
       gatewayRunning: false,
+      gatewayStartingUp: false,
       notes: []
     };
 
@@ -146,9 +148,22 @@ export class EnvironmentService {
     }
 
     const gatewayStatus = await this.gatewayStatus();
-    status.gatewayRunning = gatewayStatus.ok && /running|active|ok/i.test(`${gatewayStatus.stdout} ${gatewayStatus.stderr}`);
+    const processRunning = gatewayStatus.ok && /running|active|ok/i.test(`${gatewayStatus.stdout} ${gatewayStatus.stderr}`);
 
-    if (!status.gatewayRunning) {
+    if (processRunning) {
+      // The gateway process is running, but it takes 15-30s to initialize
+      // and bind the WebSocket port. Verify the port is actually accepting
+      // connections before declaring gatewayRunning = true, so the UI
+      // doesn't show broken pages or let the user restart the gateway
+      // mid-startup.
+      const portReady = await this.isGatewayPortReady();
+      status.gatewayRunning = portReady;
+      if (!portReady) {
+        status.gatewayStartingUp = true;
+        status.notes.push("Gateway process is starting up — waiting for WebSocket port to become ready.");
+      }
+    } else {
+      status.gatewayRunning = false;
       status.notes.push("Gateway is not running yet.");
     }
 
@@ -238,8 +253,171 @@ export class EnvironmentService {
     return this.runWizardCall<{ status: WizardRunStatus; error?: string }>("wizard.cancel", { sessionId });
   }
 
+  private gatewayCallQueue: Promise<unknown> = Promise.resolve();
+  private cachedGatewayAuthToken: string | null = null;
+
+  public gatewayCall<T>(method: string, params: unknown = {}): Promise<T> {
+    // Serialize gateway calls so only one WebSocket connection is open at a time.
+    const queued = this.gatewayCallQueue.then(
+      () => this.gatewayCallSerialized<T>(method, params),
+      () => this.gatewayCallSerialized<T>(method, params)
+    );
+    this.gatewayCallQueue = queued.catch(() => {});
+    return queued;
+  }
+
+  private async gatewayCallSerialized<T>(method: string, params: unknown): Promise<T> {
+    const payload = JSON.stringify(params);
+    const maxAttempts = 5;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Resolve token inside the loop so cache-clearing on retry actually takes effect
+      const token = await this.resolveGatewayAuthToken();
+      const args = ["gateway", "call", method, "--params", payload, "--json"];
+      if (token) {
+        args.push("--token", token);
+      }
+      console.info("[gatewayCallSerialized]", { method, attempt, hasToken: !!token });
+
+      const result = await this.runOpenClaw(args);
+
+      if (!result.ok) {
+        const errorText = result.stderr || result.stdout || `${method} failed`;
+        const isTransient = /1006|abnormal closure|ECONNREFUSED|ECONNRESET|EPIPE|gateway closed/i.test(errorText);
+        lastError = new Error(`Gateway call '${method}' failed: ${errorText}`);
+        console.warn("[gatewayCallSerialized]", { method, attempt, isTransient, errorText: errorText.slice(0, 200) });
+
+        if (isTransient && attempt < maxAttempts) {
+          // Token may have changed; clear cache before retry.
+          // Use escalating delays: 2s, 4s, 6s, 8s to give the gateway time to finish starting.
+          this.cachedGatewayAuthToken = null;
+          await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          continue;
+        }
+        throw lastError;
+      }
+
+      const parsed = this.parseJsonOutput(result.stdout, result.stderr);
+      if (parsed && typeof parsed === "object" && "error" in parsed) {
+        const errorValue = (parsed as { error?: unknown }).error;
+        if (errorValue) {
+          throw new Error(typeof errorValue === "string" ? errorValue : JSON.stringify(errorValue));
+        }
+      }
+
+      if (parsed && typeof parsed === "object" && "result" in parsed) {
+        return (parsed as { result: T }).result;
+      }
+
+      return parsed as T;
+    }
+
+    throw lastError ?? new Error(`Gateway call '${method}' failed after ${maxAttempts} attempts`);
+  }
+
+  /**
+   * Reads the gateway auth token from ~/.openclaw/openclaw.json inside WSL.
+   * The gateway may require token auth (gateway.auth.mode === "token").
+   * Caches the result to avoid reading the config on every call.
+   *
+   * Reads the raw JSON via `wsl.exe cat` and parses it in-process (Node.js)
+   * so we don't depend on any WSL-side tools being in PATH.
+   */
+  private async resolveGatewayAuthToken(): Promise<string | null> {
+    if (this.cachedGatewayAuthToken !== null) {
+      console.info("[resolveGatewayAuthToken] using cached token, hasToken:", !!this.cachedGatewayAuthToken);
+      return this.cachedGatewayAuthToken || null;
+    }
+
+    try {
+      let configJson = "";
+      if (process.platform === "win32") {
+        const wslStatus = await this.getWslStatus();
+        console.info("[resolveGatewayAuthToken] wslStatus:", {
+          wslInstalled: wslStatus.wslInstalled,
+          distroInstalled: wslStatus.distroInstalled,
+          distroReachable: wslStatus.distroReachable,
+          distro: wslStatus.distro
+        });
+        if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+          const brewUser = await this.resolveWslBrewUser(wslStatus.distro) || "root";
+          const configPath = "/home/" + brewUser + "/.openclaw/openclaw.json";
+          console.info("[resolveGatewayAuthToken] reading config:", { brewUser, configPath });
+          const result = await runCommand("wsl.exe", [
+            "-d", wslStatus.distro, "--", "cat", configPath
+          ], { timeoutMs: 10_000, env: this.buildCommandEnv() });
+          console.info("[resolveGatewayAuthToken] cat result:", {
+            ok: result.ok,
+            stdoutLen: result.stdout?.length ?? 0,
+            stderrLen: result.stderr?.length ?? 0,
+            stderr: (result.stderr || "").slice(0, 200)
+          });
+          configJson = result.ok ? result.stdout : "";
+        }
+      } else {
+        const homedir = os.homedir();
+        const configPath = path.join(homedir, ".openclaw", "openclaw.json");
+        try {
+          const { readFile } = await import("node:fs/promises");
+          configJson = await readFile(configPath, "utf8");
+        } catch {
+          configJson = "";
+        }
+      }
+
+      if (configJson) {
+        const config = JSON.parse(configJson) as { gateway?: { auth?: { token?: string } } };
+        const token = config?.gateway?.auth?.token?.trim() || "";
+        console.info("[resolveGatewayAuthToken] parsed token:", { hasToken: !!token, tokenLen: token.length });
+        this.cachedGatewayAuthToken = token;
+        return token || null;
+      }
+      console.warn("[resolveGatewayAuthToken] no config JSON obtained");
+    } catch (err) {
+      console.error("[resolveGatewayAuthToken] error:", err instanceof Error ? err.message : String(err));
+    }
+
+    this.cachedGatewayAuthToken = "";
+    return null;
+  }
+
   public gatewayStatus(): Promise<CommandResult> {
     return this.runOpenClaw(["gateway", "status"]);
+  }
+
+  /**
+   * Checks whether the gateway's WebSocket port (18789) is accepting TCP
+   * connections inside WSL. The gateway process can be "running" for 15-30s
+   * before the port is actually ready, so this prevents premature RPC attempts
+   * and avoids the "Start Gateway" button appearing during startup.
+   */
+  private async isGatewayPortReady(port = 18789): Promise<boolean> {
+    if (process.platform === "win32") {
+      const wslStatus = await this.getWslStatus();
+      if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+        return false;
+      }
+      const result = await runCommand("wsl.exe", [
+        "-d", wslStatus.distro, "--", "bash", "-c",
+        `nc -z -w 2 127.0.0.1 ${port} 2>/dev/null && echo PORT_OPEN || echo PORT_CLOSED`
+      ], { timeoutMs: 8_000, env: this.buildCommandEnv() });
+      const output = (result.stdout || "").trim();
+      console.info("[isGatewayPortReady]", { ok: result.ok, output: output.slice(0, 50) });
+      return result.ok && output.includes("PORT_OPEN");
+    }
+    // On non-Windows, do a direct TCP connect
+    try {
+      const net = await import("node:net");
+      return await new Promise<boolean>((resolve) => {
+        const socket = new net.Socket();
+        const timer = setTimeout(() => { socket.destroy(); resolve(false); }, 3000);
+        socket.connect(port, "127.0.0.1", () => { clearTimeout(timer); socket.destroy(); resolve(true); });
+        socket.on("error", () => { clearTimeout(timer); socket.destroy(); resolve(false); });
+      });
+    } catch {
+      return false;
+    }
   }
 
   public async gatewayStart(): Promise<CommandResult> {
@@ -381,41 +559,126 @@ export class EnvironmentService {
     }
 
     // The CLI's paste-token command uses an interactive TUI prompt that cannot
-    // be driven non-interactively. Instead, we resolve the auth-profiles.json
-    // path from `openclaw models status --json` and write the profile directly.
-    const profileId = `${normalizedProvider}:manual`;
+    // be driven non-interactively. Instead, write auth profiles directly.
+    // Save both the exact provider and a normalized slug alias to cover
+    // provider IDs such as "kimi-coding" when UIs expose "Kimi Coding".
+    const canonicalProvider = normalizedProvider
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const providerAliases = Array.from(
+      new Set([normalizedProvider, canonicalProvider].filter((value) => value.length > 0))
+    );
     const jsonPayload = JSON.stringify({
-      id: profileId,
-      provider: normalizedProvider,
-      type: "api-key",
-      token: normalizedKey,
-      createdAt: new Date().toISOString()
+      providers: providerAliases,
+      key: normalizedKey
     });
 
     const quotedPayload = this.quoteForBash(jsonPayload);
     const resolveAndWrite = [
       this.buildBrewShellenvBootstrapCommand(),
       "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
-      // Resolve the store path from the CLI
-      "export STORE_PATH=$(openclaw models status --json 2>/dev/null | node -e \"process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{console.log(JSON.parse(d).auth.storePath)}catch{process.exit(1)}})\")",
-      "if [ -z \"$STORE_PATH\" ]; then echo \"Could not resolve auth store path.\" >&2; exit 1; fi",
-      "echo \"Resolved auth store: $STORE_PATH\"",
-      // Ensure parent directory exists
-      "mkdir -p \"$(dirname \"$STORE_PATH\")\"",
-      // Read existing file or start with empty array, then upsert the profile
-      // Pass store path as argv[1] to avoid env var issues
+      // Resolve status payload once; includes auth store metadata in newer CLI versions.
+      "export STATUS_JSON=\"$(openclaw models status --json 2>/dev/null)\"",
+      "if [ -z \"$STATUS_JSON\" ]; then echo \"Could not resolve model status payload.\" >&2; exit 1; fi",
+      // Read existing file(s) or start with empty array, then upsert profile aliases.
+      // This writes to the discovered auth store, plus conservative fallback paths
+      // for agent-scoped and legacy/global stores.
       `node -e "
         const fs = require('fs');
-        const storePath = process.argv[1];
-        const newProfile = ${quotedPayload};
-        let profiles = [];
-        try { profiles = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch {}
-        if (!Array.isArray(profiles)) profiles = [];
-        const idx = profiles.findIndex(p => p.id === newProfile.id);
-        if (idx >= 0) { profiles[idx] = newProfile; } else { profiles.push(newProfile); }
-        fs.writeFileSync(storePath, JSON.stringify(profiles, null, 2) + '\\n');
-        console.log('Saved auth profile: ' + newProfile.id);
-      " "$STORE_PATH"`
+        const path = require('path');
+        const statusJson = process.env.STATUS_JSON || '';
+        const payload = ${quotedPayload};
+        const providers = Array.isArray(payload.providers) ? payload.providers : [];
+        const home = process.env.HOME || '';
+        let status = {};
+        try { status = JSON.parse(statusJson); } catch {}
+
+        const stores = new Set();
+        const addStore = (value) => {
+          if (typeof value !== 'string' || !value.trim()) return;
+          stores.add(value.trim());
+        };
+
+        addStore(status?.auth?.storePath);
+        addStore(status?.auth?.store?.path);
+        addStore(status?.storePath);
+
+        const agentDir = status?.agentDir || status?.agent?.dir || status?.auth?.agentDir;
+        if (typeof agentDir === 'string' && agentDir.trim()) {
+          addStore(path.posix.join(agentDir.trim(), 'auth-profiles.json'));
+        }
+
+        if (home) {
+          addStore(path.posix.join(home, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'));
+          addStore(path.posix.join(home, '.openclaw', 'auth-profiles.json'));
+        }
+
+        if (stores.size === 0) {
+          console.error('Could not resolve any auth store paths.');
+          process.exit(1);
+        }
+
+        const toProfileId = (provider) => provider + ':manual';
+        const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+        const normalizeEntry = (entry) => {
+          if (!isObject(entry)) return null;
+          const provider = typeof entry.provider === 'string' ? entry.provider.trim() : '';
+          if (!provider) return null;
+          const rawType = typeof entry.type === 'string' ? entry.type.trim() : '';
+          const type = rawType === 'api-key' ? 'api_key' : rawType || (typeof entry.token === 'string' || typeof entry.key === 'string' ? 'api_key' : '');
+          if (!type) return null;
+          const credential = { ...entry, type };
+          if (type === 'api_key') {
+            if (typeof credential.key !== 'string' && typeof credential.token === 'string') {
+              credential.key = credential.token;
+            }
+            delete credential.token;
+          }
+          return [toProfileId(provider), credential];
+        };
+
+        let totalUpserts = 0;
+        for (const storePath of stores) {
+          fs.mkdirSync(path.posix.dirname(storePath), { recursive: true });
+          let parsed = null;
+          try { parsed = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch {}
+
+          const store = isObject(parsed) ? parsed : {};
+          const profiles = isObject(store.profiles) ? { ...store.profiles } : {};
+
+          // Migrate legacy/invalid array format into map format expected by OpenClaw.
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              const normalized = normalizeEntry(item);
+              if (!normalized) continue;
+              const [id, credential] = normalized;
+              profiles[id] = credential;
+            }
+          }
+
+          for (const provider of providers) {
+            profiles[toProfileId(provider)] = {
+              provider,
+              type: 'api_key',
+              key: payload.key
+            };
+            totalUpserts += 1;
+          }
+
+          const normalizedStore = {
+            version: Number(store.version || 1) || 1,
+            profiles
+          };
+          if (isObject(store.order)) normalizedStore.order = store.order;
+          if (isObject(store.lastGood)) normalizedStore.lastGood = store.lastGood;
+          if (isObject(store.usageStats)) normalizedStore.usageStats = store.usageStats;
+
+          fs.writeFileSync(storePath, JSON.stringify(normalizedStore, null, 2) + '\\n');
+          console.log('Saved auth profiles in: ' + storePath);
+        }
+        console.log('Provider aliases: ' + providers.join(', ') + '; upserts: ' + totalUpserts);
+      "`
     ].join("; ");
 
     if (process.platform === "win32") {
@@ -461,39 +724,32 @@ export class EnvironmentService {
         detail: "Always-on gateway uses Windows Task Scheduler and is only available on Windows."
       };
     }
+    const systemdStatus = await this.getSystemdAlwaysOnStatus();
+    const scheduledTaskStatus = await this.getScheduledTaskAlwaysOnStatus();
 
-    const query = await runCommand(
-      "schtasks.exe",
-      ["/Query", "/TN", ALWAYS_ON_TASK_NAME, "/FO", "LIST", "/V"],
-      { okExitCodes: [1] }
-    );
+    if (systemdStatus.supported && systemdStatus.enabled) {
+      return {
+        supported: true,
+        enabled: true,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: "Enabled via WSL systemd user service."
+      };
+    }
 
-    if (query.code === 1 && isScheduledTaskMissing(query)) {
+    if (scheduledTaskStatus.enabled) {
+      return scheduledTaskStatus;
+    }
+
+    if (systemdStatus.supported) {
       return {
         supported: true,
         enabled: false,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: "Disabled. Gateway will not auto-start at Windows sign-in."
+        detail: `Disabled. ${systemdStatus.detail}`
       };
     }
 
-    if (query.code !== 0 || !query.ok) {
-      return {
-        supported: true,
-        enabled: false,
-        taskName: ALWAYS_ON_TASK_NAME,
-        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
-      };
-    }
-
-    const statusMatch = query.stdout.match(/Status:\s*(.+)/i);
-    const statusLabel = statusMatch ? statusMatch[1].trim() : "Ready";
-    return {
-      supported: true,
-      enabled: true,
-      taskName: ALWAYS_ON_TASK_NAME,
-      detail: `Enabled. Task Scheduler state: ${statusLabel}.`
-    };
+    return scheduledTaskStatus;
   }
 
   public async setAlwaysOnGatewayEnabled(enabled: boolean): Promise<AlwaysOnGatewayStatus> {
@@ -502,41 +758,16 @@ export class EnvironmentService {
     }
 
     if (enabled) {
-      const createResult = await runCommand("schtasks.exe", [
-        "/Create",
-        "/TN",
-        ALWAYS_ON_TASK_NAME,
-        "/SC",
-        "ONLOGON",
-        "/RL",
-        "LIMITED",
-        "/F",
-        "/TR",
-        this.getAlwaysOnTaskAction()
-      ]);
-
-      if (!createResult.ok) {
-        throw new Error(createResult.stderr || createResult.stdout || "Failed to create always-on gateway task.");
+      const systemdEnable = await this.enableSystemdAlwaysOn();
+      if (!systemdEnable.ok) {
+        await this.enableScheduledTaskAlwaysOn();
       }
-
       void this.gatewayStart();
       return this.getAlwaysOnGatewayStatus();
     }
 
-    const deleteResult = await runCommand(
-      "schtasks.exe",
-      ["/Delete", "/TN", ALWAYS_ON_TASK_NAME, "/F"],
-      { okExitCodes: [1] }
-    );
-
-    if (deleteResult.code === 1 && isScheduledTaskMissing(deleteResult)) {
-      return this.getAlwaysOnGatewayStatus();
-    }
-
-    if (deleteResult.code !== 0 || !deleteResult.ok) {
-      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
-    }
-
+    await this.disableSystemdAlwaysOn();
+    await this.disableScheduledTaskAlwaysOn();
     return this.getAlwaysOnGatewayStatus();
   }
 
@@ -1370,27 +1601,217 @@ export class EnvironmentService {
     return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "${escapedScript}"`;
   }
 
-  private async runWizardCall<T>(method: string, params: unknown): Promise<T> {
-    const payload = JSON.stringify(params);
-    const result = await this.runOpenClaw(["gateway", "call", method, "--params", payload, "--json"]);
+  private async getScheduledTaskAlwaysOnStatus(): Promise<AlwaysOnGatewayStatus> {
+    const query = await runCommand(
+      "schtasks.exe",
+      ["/Query", "/TN", ALWAYS_ON_TASK_NAME, "/FO", "LIST", "/V"],
+      { okExitCodes: [1] }
+    );
 
-    if (!result.ok) {
-      throw new Error(result.stderr || result.stdout || `${method} failed`);
+    if (query.code === 1 && isScheduledTaskMissing(query)) {
+      return {
+        supported: true,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: "Disabled. Gateway will not auto-start at Windows sign-in."
+      };
     }
 
-    const parsed = this.parseJsonOutput(result.stdout, result.stderr);
-    if (parsed && typeof parsed === "object" && "error" in parsed) {
-      const errorValue = (parsed as { error?: unknown }).error;
-      if (errorValue) {
-        throw new Error(typeof errorValue === "string" ? errorValue : JSON.stringify(errorValue));
-      }
+    if (query.code !== 0 || !query.ok) {
+      return {
+        supported: true,
+        enabled: false,
+        taskName: ALWAYS_ON_TASK_NAME,
+        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
+      };
     }
 
-    if (parsed && typeof parsed === "object" && "result" in parsed) {
-      return (parsed as { result: T }).result;
+    const statusMatch = query.stdout.match(/Status:\s*(.+)/i);
+    const statusLabel = statusMatch ? statusMatch[1].trim() : "Ready";
+    return {
+      supported: true,
+      enabled: true,
+      taskName: ALWAYS_ON_TASK_NAME,
+      detail: `Enabled via Windows Task Scheduler. State: ${statusLabel}.`
+    };
+  }
+
+  private async enableScheduledTaskAlwaysOn(): Promise<void> {
+    const createResult = await runCommand("schtasks.exe", [
+      "/Create",
+      "/TN",
+      ALWAYS_ON_TASK_NAME,
+      "/SC",
+      "ONLOGON",
+      "/RL",
+      "LIMITED",
+      "/F",
+      "/TR",
+      this.getAlwaysOnTaskAction()
+    ]);
+
+    if (!createResult.ok) {
+      throw new Error(createResult.stderr || createResult.stdout || "Failed to create always-on gateway task.");
+    }
+  }
+
+  private async disableScheduledTaskAlwaysOn(): Promise<void> {
+    const deleteResult = await runCommand(
+      "schtasks.exe",
+      ["/Delete", "/TN", ALWAYS_ON_TASK_NAME, "/F"],
+      { okExitCodes: [1] }
+    );
+
+    if (deleteResult.code === 1 && isScheduledTaskMissing(deleteResult)) {
+      return;
     }
 
-    return parsed as T;
+    if (deleteResult.code !== 0 || !deleteResult.ok) {
+      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
+    }
+  }
+
+  private async getSystemdAlwaysOnStatus(): Promise<{ supported: boolean; enabled: boolean; detail: string }> {
+    if (process.platform !== "win32") {
+      return { supported: false, enabled: false, detail: "Not on Windows." };
+    }
+
+    const wslStatus = await this.getWslStatus();
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+      return { supported: false, enabled: false, detail: "WSL distro is not ready." };
+    }
+
+    const distro = wslStatus.distro;
+    const cliUser = await this.resolveWslBrewUser(distro);
+    if (!cliUser) {
+      return { supported: false, enabled: false, detail: "No non-root WSL user configured yet." };
+    }
+
+    const systemdCheck = await this.runWslBash(
+      distro,
+      "if [ \"$(ps -p 1 -o comm= | tr -d '[:space:]')\" = \"systemd\" ] && command -v systemctl >/dev/null 2>&1; then echo ok; else echo unavailable; fi",
+      20_000,
+      cliUser
+    );
+    if (!systemdCheck.ok || !/\bok\b/i.test(systemdCheck.stdout)) {
+      return { supported: false, enabled: false, detail: "WSL systemd is not available." };
+    }
+
+    const statusResult = await this.runWslBash(
+      distro,
+      [
+        `enabled_state="$(systemctl --user is-enabled ${ALWAYS_ON_SYSTEMD_USER_SERVICE} 2>&1 || true)"`,
+        `active_state="$(systemctl --user is-active ${ALWAYS_ON_SYSTEMD_USER_SERVICE} 2>&1 || true)"`,
+        "echo \"enabled:$enabled_state\"",
+        "echo \"active:$active_state\""
+      ].join("; "),
+      20_000,
+      cliUser
+    );
+    if (!statusResult.ok) {
+      return { supported: true, enabled: false, detail: "Could not read systemd user service status." };
+    }
+
+    const raw = `${statusResult.stdout}\n${statusResult.stderr}`.toLowerCase();
+    const enabled = /enabled:enabled/.test(raw) || /active:active/.test(raw);
+    const detail = enabled
+      ? "WSL systemd user service is enabled."
+      : "WSL systemd user service is disabled.";
+
+    return { supported: true, enabled, detail };
+  }
+
+  private async enableSystemdAlwaysOn(): Promise<{ ok: boolean; detail: string }> {
+    const wslStatus = await this.getWslStatus();
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+      return { ok: false, detail: "WSL distro is not ready." };
+    }
+
+    const distro = wslStatus.distro;
+    const cliUser = await this.resolveWslBrewUser(distro);
+    if (!cliUser) {
+      return { ok: false, detail: "No non-root WSL user configured yet." };
+    }
+
+    const check = await this.getSystemdAlwaysOnStatus();
+    if (!check.supported) {
+      return { ok: false, detail: check.detail };
+    }
+
+    // Best-effort: keep the user service active across WSL boots if linger is available.
+    await this.runWslBash(
+      distro,
+      `if command -v loginctl >/dev/null 2>&1; then loginctl enable-linger ${this.quoteForBash(cliUser)} >/dev/null 2>&1 || true; fi`,
+      20_000,
+      "root"
+    ).catch(() => {});
+
+    const unitContent = [
+      "[Unit]",
+      "Description=OpenClaw Gateway",
+      "After=network-online.target",
+      "",
+      "[Service]",
+      "Type=oneshot",
+      "RemainAfterExit=yes",
+      `ExecStart=/bin/bash -lc '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start'`,
+      `ExecStop=/bin/bash -lc '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway stop'`,
+      "",
+      "[Install]",
+      "WantedBy=default.target"
+    ].join("\n");
+    const encodedUnit = Buffer.from(unitContent, "utf8").toString("base64");
+
+    const configureResult = await this.runWslBash(
+      distro,
+      [
+        "set -e",
+        "mkdir -p \"$HOME/.config/systemd/user\"",
+        `echo ${encodedUnit} | base64 -d > "$HOME/.config/systemd/user/${ALWAYS_ON_SYSTEMD_USER_SERVICE}"`,
+        "systemctl --user daemon-reload",
+        `systemctl --user enable --now ${ALWAYS_ON_SYSTEMD_USER_SERVICE}`
+      ].join("; "),
+      45_000,
+      cliUser
+    );
+    if (!configureResult.ok) {
+      return { ok: false, detail: configureResult.stderr || configureResult.stdout || "Unknown systemd failure." };
+    }
+
+    await this.disableScheduledTaskAlwaysOn().catch(() => {});
+    return { ok: true, detail: "Enabled via WSL systemd user service." };
+  }
+
+  private async disableSystemdAlwaysOn(): Promise<void> {
+    const wslStatus = await this.getWslStatus();
+    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+      return;
+    }
+
+    const distro = wslStatus.distro;
+    const cliUser = await this.resolveWslBrewUser(distro);
+    if (!cliUser) {
+      return;
+    }
+
+    const status = await this.getSystemdAlwaysOnStatus();
+    if (!status.supported) {
+      return;
+    }
+
+    await this.runWslBash(
+      distro,
+      [
+        `systemctl --user disable --now ${ALWAYS_ON_SYSTEMD_USER_SERVICE} >/dev/null 2>&1 || true`,
+        "systemctl --user daemon-reload >/dev/null 2>&1 || true"
+      ].join("; "),
+      30_000,
+      cliUser
+    ).catch(() => {});
+  }
+
+  private runWizardCall<T>(method: string, params: unknown): Promise<T> {
+    return this.gatewayCall<T>(method, params);
   }
 
   private async runOpenClaw(args: string[]): Promise<CommandResult> {
@@ -1643,10 +2064,19 @@ export class EnvironmentService {
   private async writeWslTempScript(distro: string, command: string): Promise<string> {
     const scriptName = `_oc_setup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.sh`;
     const wslPath = `/tmp/${scriptName}`;
+    const normalizedCommand = [
+      // Some Windows environments leak HOME into WSL as "C:Users<name>".
+      // Normalize HOME to the Linux passwd home so auth/config paths resolve
+      // consistently (e.g. /home/<user>/.openclaw/...).
+      "if [ -z \"${HOME:-}\" ] || echo \"${HOME}\" | grep -Eq '^[A-Za-z]:'; then HOME=\"$(getent passwd \"$(id -u)\" | cut -d: -f6)\"; fi",
+      "if [ -z \"${HOME:-}\" ]; then HOME=\"/home/$(id -un)\"; fi",
+      "export HOME",
+      command
+    ].join("; ");
     // Write the script into WSL /tmp via a simple echo. The command content is
     // base64-encoded to avoid any quoting/escaping issues with wsl.exe argument
     // forwarding.
-    const encoded = Buffer.from(command, "utf8").toString("base64");
+    const encoded = Buffer.from(normalizedCommand, "utf8").toString("base64");
     await runCommand("wsl.exe", ["-d", distro, "--", "bash", "-c",
       `echo ${encoded} | base64 -d > ${wslPath} && chmod +x ${wslPath}`], {
       timeoutMs: 15_000,
@@ -1667,6 +2097,9 @@ export class EnvironmentService {
     const prefix = this.getManagedNpmPrefix();
 
     if (process.platform === "win32") {
+      // Avoid leaking Windows HOME into WSL commands where it becomes
+      // "C:Users<name>" and breaks Linux path resolution.
+      delete env.HOME;
       // Windows env vars are case-insensitive, but Node's process.env object
       // can contain both "Path" and "PATH". Consolidate to a single key to
       // avoid confusing tools that do case-sensitive lookups.

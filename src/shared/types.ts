@@ -101,6 +101,8 @@ export interface EnvironmentStatus {
   brewInstalled: boolean;
   openClawInstalled: boolean;
   gatewayRunning: boolean;
+  /** True when the gateway process exists but the WebSocket port isn't ready yet. */
+  gatewayStartingUp: boolean;
   notes: string[];
 }
 
@@ -226,6 +228,7 @@ export interface RendererApi {
   gatewayStart: () => Promise<CommandResult>;
   gatewayStartStreaming: () => Promise<CommandResult>;
   gatewayStop: () => Promise<CommandResult>;
+  gatewayCall: <T = unknown>(method: string, params?: unknown) => Promise<T>;
   openAuthSignIn: () => Promise<boolean>;
   runAuthHandoff: () => Promise<AuthSessionStatus>;
   getAuthSessionStatus: () => Promise<AuthSessionStatus>;

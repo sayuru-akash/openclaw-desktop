@@ -10,6 +10,11 @@ import type {
   WizardStartParams
 } from "../shared/types";
 
+function createRequestId(): string {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `gw-${Date.now()}-${random}`;
+}
+
 const api: RendererApi = {
   getEnvironmentStatus: () => ipcRenderer.invoke("env:get-status"),
   getChannelStatuses: () => ipcRenderer.invoke("channels:get-status"),
@@ -39,6 +44,33 @@ const api: RendererApi = {
   gatewayStart: () => ipcRenderer.invoke("gateway:start"),
   gatewayStartStreaming: () => ipcRenderer.invoke("gateway:start-stream"),
   gatewayStop: () => ipcRenderer.invoke("gateway:stop"),
+  gatewayCall: async (method: string, params?: unknown) => {
+    const requestId = createRequestId();
+    const startedAt = Date.now();
+    console.info("[preload]", { area: "gateway", event: "call:start", requestId, method });
+    try {
+      const result = await ipcRenderer.invoke("gateway:call", method, params ?? {}, requestId);
+      console.info("[preload]", {
+        area: "gateway",
+        event: "call:success",
+        requestId,
+        method,
+        durationMs: Date.now() - startedAt
+      });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[preload]", {
+        area: "gateway",
+        event: "call:error",
+        requestId,
+        method,
+        durationMs: Date.now() - startedAt,
+        message
+      });
+      throw error;
+    }
+  },
   openAuthSignIn: () => ipcRenderer.invoke("auth:open-signin"),
   runAuthHandoff: () => ipcRenderer.invoke("auth:handoff"),
   getAuthSessionStatus: () => ipcRenderer.invoke("auth:get-session"),
