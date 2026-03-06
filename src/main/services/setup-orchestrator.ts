@@ -138,6 +138,15 @@ export class SetupOrchestrator extends EventEmitter {
       message: "Finalizing onboarding and verifying gateway in WSL."
     });
 
+    const currentStatus = await this.environmentService.getEnvironmentStatus();
+    if (currentStatus.gatewayRunning) {
+      return this.saveState({
+        stage: "completed",
+        requiresReboot: false,
+        message: "Setup complete. OpenClaw gateway is running."
+      });
+    }
+
     const startResult = await this.environmentService.gatewayStartStreaming((line, stream) => {
       this.emitProgress("starting_gateway", line, stream === "stderr" ? "warning" : "info", stream);
     });

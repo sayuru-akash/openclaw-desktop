@@ -305,6 +305,7 @@ export function App() {
   const [manageProvider, setManageProvider] = useState("");
   const [manageModel, setManageModel] = useState("");
   const [manageApiKey, setManageApiKey] = useState("");
+  const [modelStepSkipped, setModelStepSkipped] = useState(false);
   const [telegramToken, setTelegramToken] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [actionProgressLabel, setActionProgressLabel] = useState("");
@@ -842,6 +843,12 @@ export function App() {
   }, [awaitingWslUserSetup]);
 
   useEffect(() => {
+    if (modelConfigured && modelStepSkipped) {
+      setModelStepSkipped(false);
+    }
+  }, [modelConfigured, modelStepSkipped]);
+
+  useEffect(() => {
     if (!awaitingWslUserSetup || isBusy) {
       return;
     }
@@ -902,10 +909,13 @@ export function App() {
   const completeOnboarding = () => runAction("Complete onboarding", async () => {
     const setup = await window.openclaw.completeOnboardingFromUi();
     setSetupState(setup);
+    if (setup.stage !== "completed") {
+      throw new Error(setup.message || "Onboarding could not be finalized yet.");
+    }
     const nextConfig = await window.openclaw.saveConfig({ onboardingCompleted: true });
     setConfigDraft(nextConfig);
-    await refreshAll();
     setPage("chat");
+    void refreshAll();
   });
 
   const handleReconnectChannel = (channel: "whatsapp" | "telegram") => runAction(`${channel} reconnect`, async () => {
@@ -1062,6 +1072,13 @@ export function App() {
   const refreshAllAction = () => runAction("Refresh", async () => {
     await refreshAll(true);
   });
+
+  const skipModelSelection = () => {
+    setError("");
+    setModelStepSkipped(true);
+    appendLog("Model selection skipped in onboarding. Configure it later in Models.");
+    advanceOnboarding();
+  };
 
 
   useEffect(() => {
@@ -1353,7 +1370,7 @@ export function App() {
       case "openclaw":
         return Boolean(environment?.openClawInstalled) && Boolean(environment?.gatewayRunning);
       case "model":
-        return modelConfigured;
+        return modelConfigured || modelStepSkipped;
       case "done":
         return Boolean(configDraft?.onboardingCompleted);
       default:
@@ -1457,6 +1474,7 @@ export function App() {
 
     if (step === "model") {
       if (modelConfigured) {
+        setModelStepSkipped(false);
         advanceOnboarding();
         return;
       }
@@ -1474,6 +1492,7 @@ export function App() {
       }
       const status = await refreshModels();
       if (status.provider && status.model) {
+        setModelStepSkipped(false);
         advanceOnboarding();
       }
       return;
@@ -1484,11 +1503,8 @@ export function App() {
       if (!ok) {
         return;
       }
-      const config = await refreshConfig();
-      if (config.onboardingCompleted) {
-        setWizardStepIndex(0);
-        setPage("chat");
-      }
+      setWizardStepIndex(0);
+      setPage("chat");
     }
   };
 
@@ -1739,7 +1755,11 @@ export function App() {
               {currentOnboardingStep.id === "done" ? (
                 <Card>
                   <CardContent className="pt-5 text-sm text-muted-foreground">
-                    {onboardingStepDone("model") ? "Everything is ready." : "Complete previous steps first."}
+                    {modelConfigured
+                      ? "Everything is ready."
+                      : modelStepSkipped
+                        ? "Model setup was skipped. You can configure it later in Models."
+                        : "Complete previous steps first."}
                   </CardContent>
                 </Card>
               ) : null}
@@ -1747,7 +1767,7 @@ export function App() {
 
             {renderActionProgress()}
 
-            <div className="mt-6">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               <Button
                 variant="primary"
                 className="h-12 px-8 text-base font-semibold"
@@ -1756,6 +1776,16 @@ export function App() {
               >
                 {onboardingPrimaryLabel}
               </Button>
+              {currentOnboardingStep.id === "model" && !modelConfigured ? (
+                <Button
+                  variant="outline"
+                  className="h-12 px-8 text-base"
+                  onClick={skipModelSelection}
+                  disabled={isBusy}
+                >
+                  Skip for now
+                </Button>
+              ) : null}
             </div>
           </section>
 

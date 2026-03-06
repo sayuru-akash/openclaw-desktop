@@ -37,8 +37,8 @@ const OPENCLAW_MIN_FREE_BYTES = 1024 * 1024 * 1024;
 const DEFAULT_WSL_DISTRO = "Ubuntu";
 const WSL_USER_SETUP_REQUIRED_MARKER = "WSL_USER_SETUP_REQUIRED";
 const LINUXBREW_SYSTEM_PREFIX = "/home/linuxbrew/.linuxbrew";
-const MIN_OPENCLAW_WSL_NODE_MAJOR = 20;
 const WSL_RUNTIME_NODE_SOURCE_MAJOR = 22;
+const MIN_OPENCLAW_WSL_NODE_MAJOR = WSL_RUNTIME_NODE_SOURCE_MAJOR;
 
 interface WslStatus {
   wslInstalled: boolean;
@@ -437,6 +437,7 @@ export class EnvironmentService {
    */
   private async ensureGatewayModeLocal(): Promise<void> {
     const script = [
+      this.buildWslNodeBootstrapCommand(),
       "CONFIG=\"$HOME/.openclaw/openclaw.json\"",
       "if [ ! -f \"$CONFIG\" ]; then exit 0; fi",
       "node -e \"" +
@@ -576,8 +577,7 @@ export class EnvironmentService {
 
     const quotedPayload = this.quoteForBash(jsonPayload);
     const resolveAndWrite = [
-      this.buildBrewShellenvBootstrapCommand(),
-      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
+      this.buildManagedWslPathBootstrapCommand(),
       // Resolve status payload once; includes auth store metadata in newer CLI versions.
       "export STATUS_JSON=\"$(openclaw models status --json 2>/dev/null)\"",
       "if [ -z \"$STATUS_JSON\" ]; then echo \"Could not resolve model status payload.\" >&2; exit 1; fi",
@@ -1027,6 +1027,7 @@ export class EnvironmentService {
 
     const installScript = [
       "set -e",
+      this.buildWslNodeBootstrapCommand(),
       "echo \"WSL user: $(id -un)\"",
       "if command -v node >/dev/null 2>&1; then echo \"node: $(node --version)\"; elif command -v nodejs >/dev/null 2>&1; then echo \"nodejs: $(nodejs --version)\"; else echo \"node: missing\"; fi",
       "if command -v npm >/dev/null 2>&1; then echo \"npm: $(npm --version)\"; else echo \"npm: missing\"; fi",
@@ -1508,11 +1509,13 @@ export class EnvironmentService {
   }
 
   private async getNodeRuntimeStatus(distro: string): Promise<NodeRuntimeStatus> {
-    const nodeCheck = await this.runWslBash(distro, "node --version", 20_000);
+    const cliUser = await this.resolveWslBrewUser(distro);
+    const runtimeBootstrap = this.buildWslNodeBootstrapCommand();
+    const nodeCheck = await this.runWslBash(distro, `${runtimeBootstrap}; node --version`, 20_000, cliUser || undefined);
     const nodejsCheck = nodeCheck.ok
       ? nodeCheck
-      : await this.runWslBash(distro, "nodejs --version", 20_000);
-    const npmCheck = await this.runWslBash(distro, "npm --version", 20_000);
+      : await this.runWslBash(distro, `${runtimeBootstrap}; nodejs --version`, 20_000, cliUser || undefined);
+    const npmCheck = await this.runWslBash(distro, `${runtimeBootstrap}; npm --version`, 20_000, cliUser || undefined);
 
     const nodeVersion = nodejsCheck.ok ? this.extractCommandLastLine(nodejsCheck.stdout) : null;
     const nodeMajor = nodeVersion ? this.parseNodeMajor(nodeVersion) : null;
@@ -1594,7 +1597,7 @@ export class EnvironmentService {
     const script = [
       "$ErrorActionPreference = 'SilentlyContinue'",
       `$distro = ${distro}`,
-      `$cmd = '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start >/dev/null 2>&1'`,
+      `$cmd = '${this.buildManagedWslPathBootstrapCommand()}; openclaw gateway start >/dev/null 2>&1'`,
       "wsl.exe -d $distro -- bash -lc $cmd"
     ].join("; ");
     const escapedScript = script.replace(/"/g, '\\"');
@@ -1754,8 +1757,8 @@ export class EnvironmentService {
       "[Service]",
       "Type=oneshot",
       "RemainAfterExit=yes",
-      `ExecStart=/bin/bash -lc '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway start'`,
-      `ExecStop=/bin/bash -lc '${this.buildBrewShellenvBootstrapCommand()}; export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"; openclaw gateway stop'`,
+      `ExecStart=/bin/bash -lc '${this.buildManagedWslPathBootstrapCommand()}; openclaw gateway start'`,
+      `ExecStop=/bin/bash -lc '${this.buildManagedWslPathBootstrapCommand()}; openclaw gateway stop'`,
       "",
       "[Install]",
       "WantedBy=default.target"
@@ -1894,10 +1897,22 @@ export class EnvironmentService {
       : "\"$HOME/.openclaw-desktop/npm/bin/openclaw\"";
     const pathInvoke = quotedArgs ? `openclaw ${quotedArgs}` : "openclaw";
     return [
-      this.buildBrewShellenvBootstrapCommand(),
-      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\"",
+      this.buildManagedWslPathBootstrapCommand(),
       `if [ -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then ${managedInvoke}; elif command -v openclaw >/dev/null 2>&1; then ${pathInvoke}; else echo "openclaw CLI not found in WSL." >&2; exit 127; fi`
     ].join("; ");
+  }
+
+  private buildManagedWslPathBootstrapCommand(): string {
+    return [
+      this.buildBrewShellenvBootstrapCommand(),
+      this.buildWslNodeBootstrapCommand(),
+      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\""
+    ].join("; ");
+  }
+
+  private buildWslNodeBootstrapCommand(): string {
+    // Prefer the distro-managed Node.js install over user shell shims such as nvm/asdf.
+    return "export PATH=\"/usr/bin:/usr/local/bin:/bin:$PATH\"";
   }
 
   private buildBrewShellenvBootstrapCommand(): string {
