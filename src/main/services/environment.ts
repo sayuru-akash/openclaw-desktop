@@ -2845,6 +2845,17 @@ export class EnvironmentService {
       delete env.Path;
       delete env.PATH;
       env.Path = [prefix, currentPath].filter(Boolean).join(path.delimiter);
+    } else if (process.platform === "darwin") {
+      const currentPath = env.PATH || "";
+      const standardPaths = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+      ];
+      env.PATH = [...standardPaths, prefix, currentPath]
+        .filter(Boolean)
+        .join(path.delimiter);
     } else {
       const currentPath = env.PATH || "";
       env.PATH = [prefix, currentPath].filter(Boolean).join(path.delimiter);

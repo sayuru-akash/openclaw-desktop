@@ -32,6 +32,7 @@
     },
     "files": [
       "dist/**/*",
+      "assets/branding/openclaw_icon.icns",
       "package.json"
     ],
     "win": {
@@ -46,6 +47,7 @@
       ]
     },
     "mac": {
+      "icon": "assets/branding/openclaw_icon.icns",
       "target": [
         {
           "target": "dmg",
