@@ -561,34 +561,89 @@ export class EnvironmentService {
         const socket = new net.Socket();
         const timer = setTimeout(() => {
           socket.destroy();
+          console.info("[isGatewayPortReady] TCP timeout after 3s");
           resolve(false);
         }, 3000);
         socket.connect(port, "127.0.0.1", () => {
           clearTimeout(timer);
           socket.destroy();
+          console.info("[isGatewayPortReady] TCP connection successful");
           resolve(true);
         });
-        socket.on("error", () => {
+        socket.on("error", (err) => {
           clearTimeout(timer);
           socket.destroy();
+          console.info("[isGatewayPortReady] TCP connection error", {
+            code: (err as NodeJS.ErrnoException)?.code,
+            message: err.message,
+          });
           resolve(false);
         });
       });
-    } catch {
+    } catch (err) {
+      console.error(
+        "[isGatewayPortReady] Unexpected error",
+        err instanceof Error ? err.message : String(err),
+      );
       return false;
     }
   }
 
   public async gatewayStart(): Promise<CommandResult> {
     await this.ensureGatewayModeLocal();
-    return this.runOpenClaw(["gateway", "start"]);
+    const result = await this.runOpenClaw(["gateway", "start"]);
+    if (result.ok) {
+      // Wait for the gateway port to become ready before returning,
+      // since the process needs 15-30s to initialize after starting.
+      await this.waitForGatewayPortReady(60_000);
+    }
+    return result;
   }
 
   public async gatewayStartStreaming(
     onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     await this.ensureGatewayModeLocal();
-    return this.runOpenClawStreaming(["gateway", "start"], onLog);
+    const result = await this.runOpenClawStreaming(["gateway", "start"], onLog);
+    if (result.ok) {
+      // Wait for the gateway port to become ready before returning,
+      // since the process needs 15-30s to initialize after starting.
+      onLog("Waiting for gateway port to be ready...", "stdout");
+      await this.waitForGatewayPortReady(60_000);
+      onLog("Gateway port is ready.", "stdout");
+    }
+    return result;
+  }
+
+  /**
+   * Waits for the gateway's WebSocket port to be ready with exponential backoff retries.
+   * Retries for up to the specified timeout duration.
+   */
+  private async waitForGatewayPortReady(timeoutMs: number): Promise<void> {
+    const startTime = Date.now();
+    const maxDelay = 5000;
+    let delay = 500;
+    let attempt = 0;
+
+    while (Date.now() - startTime < timeoutMs) {
+      attempt++;
+      if (await this.isGatewayPortReady()) {
+        console.info(
+          `[waitForGatewayPortReady] Port ready after attempt ${attempt}, ${Date.now() - startTime}ms`,
+        );
+        return;
+      }
+      const elapsed = Date.now() - startTime;
+      console.info(
+        `[waitForGatewayPortReady] Attempt ${attempt} failed, retrying in ${delay}ms (elapsed: ${elapsed}ms)`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 1.5, maxDelay);
+    }
+
+    console.warn(
+      `[waitForGatewayPortReady] Timeout after ${timeoutMs}ms, port may not be ready yet`,
+    );
   }
 
   /**
@@ -2733,7 +2788,13 @@ export class EnvironmentService {
   private getOpenClawCommandCandidates(): string[] {
     const managed = this.getManagedOpenClawPath();
     if (process.platform === "win32") {
-      return [managed, "openclaw.cmd", "openclaw"];
+      return [
+        managed,
+        path.join(this.getManagedNpmPrefix(), "bin", "openclaw.cmd"),
+        path.join(this.getManagedNpmPrefix(), "bin", "openclaw"),
+        "openclaw.cmd",
+        "openclaw",
+      ];
     }
 
     return [managed, "openclaw"];
@@ -2853,7 +2914,12 @@ export class EnvironmentService {
         "/usr/local/bin",
         "/usr/local/sbin",
       ];
-      env.PATH = [...standardPaths, prefix, currentPath]
+      env.PATH = [
+        ...standardPaths,
+        path.join(prefix, "bin"),
+        prefix,
+        currentPath,
+      ]
         .filter(Boolean)
         .join(path.delimiter);
     } else {
@@ -2878,7 +2944,7 @@ export class EnvironmentService {
     if (process.platform === "win32") {
       return path.join(this.getManagedNpmPrefix(), "openclaw.cmd");
     }
-    return path.join(this.getManagedNpmPrefix(), "openclaw");
+    return path.join(this.getManagedNpmPrefix(), "bin", "openclaw");
   }
 
   private resolveNodeCommand(): string {

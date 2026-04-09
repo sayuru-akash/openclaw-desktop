@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const os = require("node:os");
+const path = require("node:path");
 
 const { EnvironmentService } = require("../dist/main/services/environment.js");
 
@@ -24,11 +26,18 @@ test("EnvironmentService checks WSL runtime as the resolved CLI user with system
   assert.deepEqual(status, {
     nodeInstalled: true,
     npmInstalled: true,
-    nodeVersion: "v22.14.0"
+    nodeVersion: "v22.14.0",
   });
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((call) => call.user), ["nonu", "nonu"]);
-  assert.ok(calls.every((call) => call.command.includes('export PATH="/usr/bin:/usr/local/bin:/bin:$PATH"')));
+  assert.deepEqual(
+    calls.map((call) => call.user),
+    ["nonu", "nonu"],
+  );
+  assert.ok(
+    calls.every((call) =>
+      call.command.includes('export PATH="/usr/bin:/usr/local/bin:/bin:$PATH"'),
+    ),
+  );
 });
 
 test("EnvironmentService rejects Node 20 for managed OpenClaw setup", async () => {
@@ -57,9 +66,54 @@ test("EnvironmentService bootstraps managed OpenClaw commands with the managed n
 
   const command = service.buildWslOpenClawCommand(["gateway", "start"]);
 
-  assert.match(command, /export PATH="\/usr\/bin:\/usr\/local\/bin:\/bin:\$PATH"/);
-  assert.match(command, /export PATH="\$HOME\/\.openclaw-desktop\/npm\/bin:\$PATH"/);
-  assert.ok(command.includes("\"$HOME/.openclaw-desktop/npm/bin/openclaw\""));
+  assert.match(
+    command,
+    /export PATH="\/usr\/bin:\/usr\/local\/bin:\/bin:\$PATH"/,
+  );
+  assert.match(
+    command,
+    /export PATH="\$HOME\/\.openclaw-desktop\/npm\/bin:\$PATH"/,
+  );
+  assert.ok(command.includes('"$HOME/.openclaw-desktop/npm/bin/openclaw"'));
   assert.ok(command.includes("'gateway'"));
   assert.ok(command.includes("'start'"));
+});
+
+test("EnvironmentService resolves macOS managed OpenClaw through the npm bin path", () => {
+  const service = new EnvironmentService();
+
+  const env = service.buildCommandEnv();
+  const managedPrefix = path.join(os.homedir(), ".openclaw-desktop", "npm");
+
+  assert.ok(env.PATH.includes(path.join(managedPrefix, "bin")));
+  assert.equal(
+    service.getManagedOpenClawPath(),
+    path.join(managedPrefix, "bin", "openclaw"),
+  );
+});
+
+test("EnvironmentService waits for gateway port ready on successful start", async () => {
+  const service = new EnvironmentService();
+  let portCheckAttempts = 0;
+  const portReadyAfterAttempt = 3;
+
+  service.runOpenClaw = async () => ({
+    ok: true,
+    code: 0,
+    stdout: "Gateway started",
+    stderr: "",
+  });
+
+  service.isGatewayPortReady = async () => {
+    portCheckAttempts++;
+    return portCheckAttempts >= portReadyAfterAttempt;
+  };
+
+  const result = await service.gatewayStart();
+
+  assert.ok(result.ok);
+  assert.ok(
+    portCheckAttempts >= portReadyAfterAttempt,
+    "Should have retried port checks until port was ready",
+  );
 });

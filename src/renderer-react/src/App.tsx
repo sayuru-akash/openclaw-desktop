@@ -1055,6 +1055,12 @@ export function App() {
           return current + 1;
         });
         appendLog(`${event.stage}: ${event.message}`);
+
+        // When setup completes, refresh environment status to pick up the actual
+        // gateway running state and other changes made during setup.
+        if (event.stage === "completed" || event.stage === "failed") {
+          void refreshEnvironmentSetup();
+        }
       },
     );
 
@@ -1069,7 +1075,7 @@ export function App() {
       removeSetupProgressListener();
       removeUpdateStatusListener();
     };
-  }, [actionProgressState, appendLog, refreshAll]);
+  }, [actionProgressState, appendLog, refreshAll, refreshEnvironmentSetup]);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("openclaw-theme");
@@ -1297,11 +1303,16 @@ export function App() {
           setup.message || "Onboarding could not be finalized yet.",
         );
       }
+
+      // Refresh environment status to ensure gateway running state is current
+      await refreshEnvironmentSetup();
+
       const nextConfig = await window.openclaw.saveConfig({
         onboardingCompleted: true,
       });
       setConfigDraft(nextConfig);
       setPage("chat");
+      // Final refresh to ensure all data is current for chat page
       void refreshAll();
     });
 
