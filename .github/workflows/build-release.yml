@@ -9,8 +9,29 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_cmd: npm run dist:win
+            verify_cmd: npm run verify:artifacts:win
+            asset_glob: |
+              release/*.exe
+              release/*.yml
+              release/*.blockmap
+          - os: macos-latest
+            build_cmd: npm run dist:mac
+            verify_cmd: npm run verify:artifacts:mac
+            asset_glob: |
+              release/*.dmg
+              release/*.pkg
+              release/*.zip
+              release/latest-mac.yml
+              release/*.blockmap
+    runs-on: ${{ matrix.os }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,11 +50,14 @@ jobs:
         shell: bash
 
       - name: Build & Package
-        run: npm run build && npx electron-builder --win --publish never
+        run: ${{ matrix.build_cmd }}
+
+      - name: Verify artifacts
+        run: ${{ matrix.verify_cmd }}
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          files: ${{ matrix.asset_glob }}
           draft: false
           generate_release_notes: true
