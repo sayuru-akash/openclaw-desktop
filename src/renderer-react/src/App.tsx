@@ -1107,7 +1107,13 @@ export function App() {
     setManageModel(models[0] || "");
   };
 
-  const modelProviders = modelStatus?.availableProviders ?? [];
+  const modelProviders = useMemo(() => {
+    const fromStatus = modelStatus?.availableProviders ?? [];
+    const fromCatalog = Object.keys(modelStatus?.modelsByProvider ?? {});
+    return Array.from(new Set([...fromStatus, ...fromCatalog])).sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }, [modelStatus?.availableProviders, modelStatus?.modelsByProvider]);
   const modelOptions = manageProvider
     ? (modelStatus?.modelsByProvider?.[manageProvider] ?? [])
     : [];
@@ -1116,6 +1122,57 @@ export function App() {
   const settingsModelOptions = settingsProvider
     ? (modelStatus?.modelsByProvider?.[settingsProvider] ?? [])
     : [];
+
+  useEffect(() => {
+    if (modelProviders.length === 0) {
+      return;
+    }
+
+    if (!manageProvider) {
+      const preferredProvider =
+        modelStatus?.provider && modelProviders.includes(modelStatus.provider)
+          ? modelStatus.provider
+          : modelProviders[0];
+      setManageProvider(preferredProvider);
+      const models = modelStatus?.modelsByProvider?.[preferredProvider] ?? [];
+      if (!manageModel && models.length > 0) {
+        setManageModel(models[0]);
+      }
+      return;
+    }
+
+    if (!manageModel) {
+      const models = modelStatus?.modelsByProvider?.[manageProvider] ?? [];
+      if (models.length > 0) {
+        setManageModel(models[0]);
+      }
+    }
+  }, [
+    manageModel,
+    manageProvider,
+    modelProviders,
+    modelStatus?.modelsByProvider,
+    modelStatus?.provider,
+  ]);
+
+  useEffect(() => {
+    if (!environment?.openClawInstalled || modelStatus) {
+      return;
+    }
+    void refreshModels();
+  }, [environment?.openClawInstalled, modelStatus, refreshModels]);
+
+  useEffect(() => {
+    const activeStepId = onboardingSteps[wizardStepIndex]?.id;
+    if (activeStepId === "model" && environment?.openClawInstalled) {
+      void refreshModels();
+    }
+  }, [
+    environment?.openClawInstalled,
+    onboardingSteps,
+    refreshModels,
+    wizardStepIndex,
+  ]);
 
   const installNode = () =>
     runAction(runtimeInstallActionLabel, async () => {
@@ -2017,6 +2074,7 @@ export function App() {
 
     if (step === "openclaw") {
       if (environment?.openClawInstalled && environment?.gatewayRunning) {
+        await refreshModels();
         advanceOnboarding();
         return;
       }
@@ -2037,9 +2095,11 @@ export function App() {
         }
         const envAfterGateway = await refreshEnvironmentSetup();
         if (envAfterGateway.gatewayRunning) {
+          await refreshModels();
           advanceOnboarding();
         }
       } else {
+        await refreshModels();
         advanceOnboarding();
       }
       return;

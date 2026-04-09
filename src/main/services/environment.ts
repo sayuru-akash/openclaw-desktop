@@ -590,6 +590,9 @@ export class EnvironmentService {
   }
 
   public async gatewayStart(): Promise<CommandResult> {
+    if (process.platform === "darwin") {
+      await this.ensureGatewayServiceInstalledOnDarwin();
+    }
     await this.ensureGatewayModeLocal();
     const result = await this.runOpenClaw(["gateway", "start"]);
     if (result.ok) {
@@ -603,6 +606,9 @@ export class EnvironmentService {
   public async gatewayStartStreaming(
     onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
+    if (process.platform === "darwin") {
+      await this.ensureGatewayServiceInstalledOnDarwin(onLog);
+    }
     await this.ensureGatewayModeLocal();
     const result = await this.runOpenClawStreaming(["gateway", "start"], onLog);
     if (result.ok) {
@@ -653,7 +659,7 @@ export class EnvironmentService {
    */
   private async ensureGatewayModeLocal(): Promise<void> {
     const script = [
-      this.buildWslNodeBootstrapCommand(),
+      process.platform === "win32" ? this.buildWslNodeBootstrapCommand() : "",
       'CONFIG="$HOME/.openclaw/openclaw.json"',
       'if [ ! -f "$CONFIG" ]; then exit 0; fi',
       'node -e "' +
@@ -666,7 +672,9 @@ export class EnvironmentService {
         "fs.writeFileSync(p,JSON.stringify(c,null,2)+'\\n');" +
         "console.log('Set gateway.mode=local')}" +
         'catch(e){console.error(e.message)}" "$CONFIG"',
-    ].join("; ");
+    ]
+      .filter(Boolean)
+      .join("; ");
 
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
@@ -687,6 +695,37 @@ export class EnvironmentService {
     }
 
     await runCommand("bash", ["-c", script], { env: this.buildCommandEnv() });
+  }
+
+  private async ensureGatewayServiceInstalledOnDarwin(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<void> {
+    if (process.platform !== "darwin") {
+      return;
+    }
+
+    const status = await this.runOpenClaw(["gateway", "status"]);
+    const statusBlob = `${status.stdout}\n${status.stderr}`.toLowerCase();
+    const needsInstall =
+      !status.ok ||
+      /service not loaded|service not installed|service unit not found|launchagent \(not loaded\)|could not find service/.test(
+        statusBlob,
+      );
+
+    if (!needsInstall) {
+      return;
+    }
+
+    onLog?.("Gateway service not installed; installing on macOS...", "stdout");
+    const install = onLog
+      ? await this.runOpenClawStreaming(["gateway", "install"], onLog)
+      : await this.runOpenClaw(["gateway", "install"]);
+    if (!install.ok) {
+      const detail = [install.stderr, install.stdout]
+        .filter((value): value is string => Boolean(value && value.trim()))
+        .join("\n");
+      throw new Error(detail || "Failed to install gateway service on macOS.");
+    }
   }
 
   public gatewayStop(): Promise<CommandResult> {
@@ -772,12 +811,12 @@ export class EnvironmentService {
   }
 
   public async getModelStatus(): Promise<ModelStatusResult> {
-    const result = await this.runOpenClaw([
-      "models",
-      "list",
-      "--all",
-      "--json",
-    ]);
+    const result = await this.runOpenClawStreaming(
+      ["models", "list", "--all", "--json"],
+      () => {
+        // Intentionally ignored; this call captures output only.
+      },
+    );
     if (!result.ok) {
       throw new Error(
         result.stderr || result.stdout || "Unable to load model status.",
@@ -3146,13 +3185,7 @@ export class EnvironmentService {
 
   private parseJsonOutput(stdout: string, stderr: string): unknown {
     const trimmedStdout = stdout.trim();
-    const candidates = [
-      trimmedStdout,
-      ...stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .reverse(),
-    ];
+    const candidates: string[] = [];
 
     const braceStart = trimmedStdout.indexOf("{");
     const braceEnd = trimmedStdout.lastIndexOf("}");
@@ -3166,16 +3199,37 @@ export class EnvironmentService {
       candidates.push(trimmedStdout.slice(bracketStart, bracketEnd + 1));
     }
 
+    candidates.push(trimmedStdout);
+    candidates.push(
+      ...stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .reverse(),
+    );
+
+    let scalarCandidate: unknown = undefined;
+
     for (const candidate of candidates) {
       if (!candidate) {
         continue;
       }
 
       try {
-        return JSON.parse(candidate);
+        const parsed = JSON.parse(candidate);
+        if (parsed !== null && typeof parsed === "object") {
+          return parsed;
+        }
+
+        if (scalarCandidate === undefined) {
+          scalarCandidate = parsed;
+        }
       } catch {
         continue;
       }
+    }
+
+    if (scalarCandidate !== undefined) {
+      return scalarCandidate;
     }
 
     const merged = `${stdout}\n${stderr}`.trim();

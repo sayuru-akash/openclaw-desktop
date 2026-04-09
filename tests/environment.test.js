@@ -117,3 +117,64 @@ test("EnvironmentService waits for gateway port ready on successful start", asyn
     "Should have retried port checks until port was ready",
   );
 });
+
+test("EnvironmentService getModelStatus uses streaming output for large catalogs", async () => {
+  const service = new EnvironmentService();
+  const firstKey = "provider-a/model-alpha";
+  const secondKey = "provider-b/model-beta";
+
+  let usedStreaming = false;
+  service.runOpenClaw = async () => {
+    throw new Error("runOpenClaw should not be used for model catalog fetch");
+  };
+  service.runOpenClawStreaming = async () => {
+    usedStreaming = true;
+    return {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({
+        count: 2,
+        models: [
+          { key: firstKey, name: "Model Alpha" },
+          { key: secondKey, name: "Model Beta" },
+        ],
+      }),
+      stderr: "",
+    };
+  };
+
+  const status = await service.getModelStatus();
+
+  assert.equal(usedStreaming, true);
+  assert.deepEqual(status.availableProviders, ["provider-a", "provider-b"]);
+  assert.deepEqual(status.modelsByProvider, {
+    "provider-a": [firstKey],
+    "provider-b": [secondKey],
+  });
+});
+
+test("EnvironmentService parseJsonOutput prefers object payload over scalar lines", () => {
+  const service = new EnvironmentService();
+
+  const mixedOutput = [
+    "[agents] synced credentials",
+    "{",
+    '  "count": 1,',
+    '  "models": [',
+    "    {",
+    '      "key": "provider-a/model-alpha",',
+    '      "name": "Model Alpha",',
+    '      "tags": [',
+    '        "default"',
+    "      ]",
+    "    }",
+    "  ]",
+    "}",
+  ].join("\n");
+
+  const parsed = service.parseJsonOutput(mixedOutput, "");
+  assert.equal(typeof parsed, "object");
+  assert.ok(parsed);
+  assert.equal(parsed.count, 1);
+  assert.equal(Array.isArray(parsed.models), true);
+});
