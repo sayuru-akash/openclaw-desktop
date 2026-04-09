@@ -1,14 +1,15 @@
 # OpenClaw Desktop
+
 <img width="400" height="400" alt="openclaw_logo_resized" src="https://github.com/user-attachments/assets/9e80a1a2-d8a1-4a8f-9a71-ff5f7d5d5591" />
 
-
-Windows-first desktop app for [OpenClaw](https://github.com/openclaw). Install once, follow the guided setup, and start using OpenClaw — no terminal, no manual config files.
+Windows-first desktop app for [OpenClaw](https://github.com/openclaw). Install once, follow the guided setup, and start using OpenClaw.
 
 ## How it works
 
-1. **Install** — Run the installer for your OS. Guided setup installs platform dependencies and prepares OpenClaw.
-2. **Onboard** — A step-by-step UI walks you through provider, model, and channel (WhatsApp/Telegram) setup.
-3. **Run** — The gateway runs in the background with tray controls. Manage channels, models, and workspace files from the app.
+1. **Install** — Run the installer for your OS.
+2. **Prepare runtime** — Guided setup verifies platform requirements and prepares OpenClaw.
+3. **Onboard** — A step-by-step UI walks you through provider, model, and channel (WhatsApp/Telegram) setup.
+4. **Run** — The gateway runs in the background with tray controls. Manage channels, models, and workspace files from the app.
 
 ## Download
 
@@ -18,6 +19,20 @@ Get the latest installers from [Releases](https://github.com/hith3sh/openclaw-de
 
 - **Windows:** Windows 10 (build 19041+) or Windows 11 with virtualization enabled.
 - **macOS:** macOS 12+ (Intel x64 or Apple Silicon arm64).
+
+## Platform setup behavior
+
+### Windows (fully guided)
+
+- App-guided setup installs and validates: WSL, Ubuntu distro, Node.js, npm, Homebrew, and OpenClaw.
+- Setup supports restart/resume and Ubuntu first-run account creation.
+
+### macOS (local runtime flow)
+
+- App-guided setup validates local runtime and installs OpenClaw locally.
+- Required runtime dependencies: Node.js and npm.
+- Homebrew is detected and shown in status when available, but is not required for onboarding completion.
+- There is no WSL flow on macOS.
 
 ## Development
 

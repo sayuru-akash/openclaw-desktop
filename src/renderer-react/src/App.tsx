@@ -4,7 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType
+  type ComponentType,
 } from "react";
 import darkBrandLogo from "../../../assets/branding/openclaw_logo.png";
 import lightBrandLogo from "../../../assets/branding/openclaw_logo_light_theme.png";
@@ -29,7 +29,7 @@ import {
   Sparkles,
   Square,
   Sun,
-  Wrench
+  Wrench,
 } from "lucide-react";
 import type {
   AlwaysOnGatewayStatus,
@@ -44,11 +44,17 @@ import type {
   SetupState,
   UpdateStatusEvent,
   WorkspaceEditableFileName,
-  WorkspaceFilePayload
+  WorkspaceFilePayload,
 } from "../../shared/types";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Select } from "./components/ui/select";
@@ -60,9 +66,16 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
-  SidebarInset
+  SidebarInset,
 } from "./components/ui/sidebar";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./components/ui/table";
 import { Textarea } from "./components/ui/textarea";
 import { ChannelsPage } from "./pages/ChannelsPage";
 import { ChatPage } from "./pages/ChatPage";
@@ -79,7 +92,7 @@ const DEFAULT_SETUP: SetupState = {
   stage: "idle",
   requiresReboot: false,
   message: "Setup has not started yet.",
-  updatedAt: new Date(0).toISOString()
+  updatedAt: new Date(0).toISOString(),
 };
 
 const FILE_OPTIONS: WorkspaceEditableFileName[] = [
@@ -88,10 +101,20 @@ const FILE_OPTIONS: WorkspaceEditableFileName[] = [
   "skills.md",
   "bootstrap.md",
   "AGENTS.md",
-  "HEARTBEAT.md"
+  "HEARTBEAT.md",
 ];
 
-type Page = "chat" | "overview" | "channels" | "sessions" | "cron" | "models" | "files" | "settings" | "updates" | "logs";
+type Page =
+  | "chat"
+  | "overview"
+  | "channels"
+  | "sessions"
+  | "cron"
+  | "models"
+  | "files"
+  | "settings"
+  | "updates"
+  | "logs";
 type ThemeMode = "dark" | "light";
 
 interface NavItem {
@@ -115,17 +138,75 @@ interface OnboardingStep {
   subtitle: string;
 }
 
-const onboardingSteps: OnboardingStep[] = [
-  { id: "welcome", label: "Welcome", title: "Welcome", subtitle: "Sign in and set up OpenClaw." },
-  { id: "runtime", label: "WSL", title: "Install WSL", subtitle: "Install WSL, Ubuntu, Node.js, npm, and Homebrew." },
-  { id: "openclaw", label: "OpenClaw", title: "Install OpenClaw", subtitle: "Install OpenClaw CLI and start gateway." },
-  { id: "model", label: "Model", title: "Pick Model", subtitle: "Choose provider and model." },
-  { id: "done", label: "Done", title: "Finish", subtitle: "Complete onboarding and open the app." }
+const windowsOnboardingSteps: OnboardingStep[] = [
+  {
+    id: "welcome",
+    label: "Welcome",
+    title: "Welcome",
+    subtitle: "Sign in and set up OpenClaw.",
+  },
+  {
+    id: "runtime",
+    label: "WSL",
+    title: "Install WSL",
+    subtitle: "Install WSL, Ubuntu, Node.js, npm, and Homebrew.",
+  },
+  {
+    id: "openclaw",
+    label: "OpenClaw",
+    title: "Install OpenClaw",
+    subtitle: "Install OpenClaw CLI and start gateway.",
+  },
+  {
+    id: "model",
+    label: "Model",
+    title: "Pick Model",
+    subtitle: "Choose provider and model.",
+  },
+  {
+    id: "done",
+    label: "Done",
+    title: "Finish",
+    subtitle: "Complete onboarding and open the app.",
+  },
+];
+
+const nonWindowsOnboardingSteps: OnboardingStep[] = [
+  {
+    id: "welcome",
+    label: "Welcome",
+    title: "Welcome",
+    subtitle: "Sign in and set up OpenClaw.",
+  },
+  {
+    id: "runtime",
+    label: "Runtime",
+    title: "Prepare Runtime",
+    subtitle: "Install Node.js and npm for your local environment.",
+  },
+  {
+    id: "openclaw",
+    label: "OpenClaw",
+    title: "Install OpenClaw",
+    subtitle: "Install OpenClaw CLI locally and start gateway.",
+  },
+  {
+    id: "model",
+    label: "Model",
+    title: "Pick Model",
+    subtitle: "Choose provider and model.",
+  },
+  {
+    id: "done",
+    label: "Done",
+    title: "Finish",
+    subtitle: "Complete onboarding and open the app.",
+  },
 ];
 
 const mainNavItems: NavItem[] = [
   { key: "chat", label: "Chat", icon: MessageSquare },
-  { key: "overview", label: "Overview", icon: LayoutDashboard }
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
 ];
 
 const manageNavItems: NavItem[] = [
@@ -136,7 +217,7 @@ const manageNavItems: NavItem[] = [
   { key: "files", label: "Files", icon: Folder },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "updates", label: "Updates", icon: ArrowUpCircle },
-  { key: "logs", label: "Logs", icon: FileText }
+  { key: "logs", label: "Logs", icon: FileText },
 ];
 
 function toVariant(value: boolean | null) {
@@ -202,28 +283,39 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_resolve, reject) => {
       setTimeout(() => reject(new Error(message)), timeoutMs);
-    })
+    }),
   ]);
 }
 
-function getChannel(result: ChannelStatusResult | null, channel: "whatsapp" | "telegram"): ChannelStatusItem {
+function getChannel(
+  result: ChannelStatusResult | null,
+  channel: "whatsapp" | "telegram",
+): ChannelStatusItem {
   const fallback: ChannelStatusItem = {
     channel,
     configured: false,
     connected: false,
     summary: "Unknown",
-    detail: "Not checked."
+    detail: "Not checked.",
   };
 
   return result?.channels.find((item) => item.channel === channel) ?? fallback;
 }
 
-function summarizeCommandResult(title: string, result: CommandResult, appendLog: (line: string) => void) {
+function summarizeCommandResult(
+  title: string,
+  result: CommandResult,
+  appendLog: (line: string) => void,
+) {
   const summary = `${title}: ${result.ok ? "ok" : "failed"}${result.code === null ? "" : ` (code ${result.code})`}`;
   appendLog(summary);
 
@@ -237,9 +329,15 @@ function summarizeCommandResult(title: string, result: CommandResult, appendLog:
   }
 }
 
-function extractCommandFailureReason(result: CommandResult, fallbackTitle: string): string {
+function extractCommandFailureReason(
+  result: CommandResult,
+  fallbackTitle: string,
+): string {
   const raw = [result.stderr, result.stdout].filter(Boolean).join("\n");
-  const normalized = raw.replace(/\u0000/g, "").replace(/\ufeff/g, "").trim();
+  const normalized = raw
+    .replace(/\u0000/g, "")
+    .replace(/\ufeff/g, "")
+    .trim();
   if (!normalized) {
     return `${fallbackTitle} failed${result.code === null ? "." : ` (code ${result.code}).`}`;
   }
@@ -248,7 +346,11 @@ function extractCommandFailureReason(result: CommandResult, fallbackTitle: strin
     return "Ubuntu account setup is required. Open Ubuntu, create username/password, then click Resume Setup.";
   }
 
-  if (/Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED/i.test(normalized)) {
+  if (
+    /Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED/i.test(
+      normalized,
+    )
+  ) {
     return "WSL distro access was denied by Windows permissions in this session. Run the app in your normal user session and retry.";
   }
 
@@ -268,12 +370,19 @@ function throwIfCommandFailed(title: string, result: CommandResult): void {
 }
 
 function toFriendlyFailureMessage(message: string): string {
-  const normalized = message.replace(/\u0000/g, "").replace(/\ufeff/g, "").trim();
+  const normalized = message
+    .replace(/\u0000/g, "")
+    .replace(/\ufeff/g, "")
+    .trim();
   if (!normalized) {
     return "Action failed. Please retry.";
   }
 
-  if (/Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED|access is denied/i.test(normalized)) {
+  if (
+    /Wsl\/EnumerateDistros\/Service\/E_ACCESSDENIED|E_ACCESSDENIED|access is denied/i.test(
+      normalized,
+    )
+  ) {
     return "Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session and retry.";
   }
 
@@ -290,17 +399,29 @@ function toFriendlyFailureMessage(message: string): string {
 
 export function App() {
   const [page, setPage] = useState<Page>("overview");
-  const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
+  const [environment, setEnvironment] = useState<EnvironmentStatus | null>(
+    null,
+  );
   const [setupState, setSetupState] = useState<SetupState>(DEFAULT_SETUP);
   const [configDraft, setConfigDraft] = useState<AppConfig | null>(null);
-  const [alwaysOnStatus, setAlwaysOnStatus] = useState<AlwaysOnGatewayStatus | null>(null);
-  const [authSession, setAuthSession] = useState<AuthSessionStatus | null>(null);
-  const [channelStatus, setChannelStatus] = useState<ChannelStatusResult | null>(null);
-  const [modelStatus, setModelStatus] = useState<ModelStatusResult | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatusEvent | null>(null);
+  const [alwaysOnStatus, setAlwaysOnStatus] =
+    useState<AlwaysOnGatewayStatus | null>(null);
+  const [authSession, setAuthSession] = useState<AuthSessionStatus | null>(
+    null,
+  );
+  const [channelStatus, setChannelStatus] =
+    useState<ChannelStatusResult | null>(null);
+  const [modelStatus, setModelStatus] = useState<ModelStatusResult | null>(
+    null,
+  );
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatusEvent | null>(
+    null,
+  );
   const [wizardStepIndex, setWizardStepIndex] = useState(0);
-  const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFilePayload | null>(null);
-  const [selectedFile, setSelectedFile] = useState<WorkspaceEditableFileName>("openclaw.json");
+  const [workspaceFile, setWorkspaceFile] =
+    useState<WorkspaceFilePayload | null>(null);
+  const [selectedFile, setSelectedFile] =
+    useState<WorkspaceEditableFileName>("openclaw.json");
   const [workspaceFileEditor, setWorkspaceFileEditor] = useState("");
   const [manageProvider, setManageProvider] = useState("");
   const [manageModel, setManageModel] = useState("");
@@ -310,15 +431,21 @@ export function App() {
   const [busyAction, setBusyAction] = useState("");
   const [actionProgressLabel, setActionProgressLabel] = useState("");
   const [actionProgressValue, setActionProgressValue] = useState(0);
-  const [actionProgressState, setActionProgressState] = useState<"idle" | "running" | "done" | "failed">("idle");
+  const [actionProgressState, setActionProgressState] = useState<
+    "idle" | "running" | "done" | "failed"
+  >("idle");
   const [error, setError] = useState("");
   const [logs, setLogs] = useState<string[]>(["App ready."]);
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const onboardingInitializedRef = useRef(false);
 
-  const actionProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const actionProgressHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const actionProgressHideTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const rebootAutoResumeAttemptedRef = useRef(false);
   const wslUserAutoResumeAttemptedRef = useRef(false);
 
@@ -327,15 +454,28 @@ export function App() {
       return null;
     }
 
-    return environment.wslReady
-      && environment.wslUserConfigured
-      && environment.nodeInstalled
-      && environment.npmInstalled
-      && environment.brewInstalled;
+    if (!environment.isWindows) {
+      return environment.nodeInstalled && environment.npmInstalled;
+    }
+
+    return (
+      environment.wslReady &&
+      environment.wslUserConfigured &&
+      environment.nodeInstalled &&
+      environment.npmInstalled &&
+      environment.brewInstalled
+    );
   }, [environment]);
 
   const missingRuntimeDependencies = useMemo(() => {
-    if (!environment || !environment.wslReady || !environment.wslUserConfigured) {
+    if (!environment) {
+      return [] as string[];
+    }
+
+    if (
+      environment.isWindows &&
+      (!environment.wslReady || !environment.wslUserConfigured)
+    ) {
       return [] as string[];
     }
 
@@ -346,15 +486,28 @@ export function App() {
     if (!environment.npmInstalled) {
       missing.push("npm");
     }
-    if (!environment.brewInstalled) {
+    if (environment.isWindows && !environment.brewInstalled) {
       missing.push("Homebrew");
     }
     return missing;
   }, [environment]);
 
+  const onboardingSteps = useMemo(
+    () =>
+      environment?.isWindows === false
+        ? nonWindowsOnboardingSteps
+        : windowsOnboardingSteps,
+    [environment?.isWindows],
+  );
+
   const runtimeInstallActionLabel = useMemo(() => {
     if (!environment) {
-      return "Install WSL";
+      return "Check Runtime";
+    }
+    if (!environment.isWindows) {
+      return missingRuntimeDependencies.length > 0
+        ? `Install ${missingRuntimeDependencies.join(" + ")}`
+        : "Refresh Runtime";
     }
     if (environment.wslAccessDenied) {
       return "Check WSL Permissions";
@@ -374,7 +527,11 @@ export function App() {
       }
       return `Install ${missingRuntimeDependencies.join(" + ")}`;
     }
-    if (!environment.nodeInstalled || !environment.npmInstalled || !environment.brewInstalled) {
+    if (
+      !environment.nodeInstalled ||
+      !environment.npmInstalled ||
+      !environment.brewInstalled
+    ) {
       return "Install WSL Runtime";
     }
     return "Repair WSL Runtime";
@@ -385,26 +542,157 @@ export function App() {
       return null;
     }
 
-    return environment.isWindows && environment.wslReady && environment.openClawInstalled && environment.gatewayRunning;
+    return (
+      environment.isWindows &&
+      environment.wslReady &&
+      environment.openClawInstalled &&
+      environment.gatewayRunning
+    );
   }, [environment]);
 
   const modelConfigured = useMemo(() => {
-    const configuredProvider = configDraft?.modelProvider || modelStatus?.provider || "";
+    const configuredProvider =
+      configDraft?.modelProvider || modelStatus?.provider || "";
     const configuredModel = configDraft?.modelName || modelStatus?.model || "";
     return Boolean(configuredProvider && configuredModel);
-  }, [configDraft?.modelName, configDraft?.modelProvider, modelStatus?.model, modelStatus?.provider]);
+  }, [
+    configDraft?.modelName,
+    configDraft?.modelProvider,
+    modelStatus?.model,
+    modelStatus?.provider,
+  ]);
 
   const isBusy = Boolean(busyAction);
   const showActionProgress = actionProgressState !== "idle";
-  const awaitingReboot = setupState.stage === "awaiting_reboot" || setupState.requiresReboot;
-  const rebootStillPending = setupState.requiresReboot && !environment?.wslReady;
-  const canResumeAfterReboot = setupState.stage === "awaiting_reboot" && Boolean(environment?.wslReady);
-  const awaitingWslUserSetup = setupState.stage === "awaiting_wsl_user_setup"
-    || Boolean(environment && environment.wslReady && !environment.wslUserConfigured);
+  const awaitingReboot =
+    setupState.stage === "awaiting_reboot" || setupState.requiresReboot;
+  const rebootStillPending =
+    setupState.requiresReboot && !environment?.wslReady;
+  const canResumeAfterReboot =
+    setupState.stage === "awaiting_reboot" && Boolean(environment?.wslReady);
+  const awaitingWslUserSetup =
+    setupState.stage === "awaiting_wsl_user_setup" ||
+    Boolean(
+      environment && environment.wslReady && !environment.wslUserConfigured,
+    );
+  const isWindowsEnvironment = environment?.isWindows !== false;
+
+  const runtimeStatusRows = useMemo((): StatusTableRow[] => {
+    if (isWindowsEnvironment) {
+      return [
+        {
+          label: "WSL",
+          value: environment?.wslAccessDenied
+            ? "Access denied"
+            : readinessText(
+                environment ? environment.wslInstalled : null,
+                "Installed",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.wslInstalled : null),
+        },
+        {
+          label: "Ubuntu distro",
+          value: environment?.wslAccessDenied
+            ? "Unknown"
+            : readinessText(
+                environment ? environment.wslDistroInstalled : null,
+                "Installed",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.wslDistroInstalled : null),
+        },
+        {
+          label: "Ubuntu user",
+          value: environment?.wslAccessDenied
+            ? "Unknown"
+            : readinessText(
+                environment ? environment.wslUserConfigured : null,
+                "Configured",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.wslUserConfigured : null),
+        },
+        {
+          label: "Node.js (WSL)",
+          value: environment?.wslAccessDenied
+            ? "Unknown"
+            : readinessText(
+                environment ? environment.nodeInstalled : null,
+                "Installed",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.nodeInstalled : null),
+        },
+        {
+          label: "npm (WSL)",
+          value: environment?.wslAccessDenied
+            ? "Unknown"
+            : readinessText(
+                environment ? environment.npmInstalled : null,
+                "Installed",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.npmInstalled : null),
+        },
+        {
+          label: "Homebrew (WSL)",
+          value: environment?.wslAccessDenied
+            ? "Unknown"
+            : readinessText(
+                environment ? environment.brewInstalled : null,
+                "Installed",
+              ),
+          variant: environment?.wslAccessDenied
+            ? toVariant(null)
+            : toVariant(environment ? environment.brewInstalled : null),
+        },
+      ];
+    }
+
+    return [
+      {
+        label: "Node.js",
+        value: readinessText(
+          environment ? environment.nodeInstalled : null,
+          "Installed",
+        ),
+        variant: toVariant(environment ? environment.nodeInstalled : null),
+      },
+      {
+        label: "npm",
+        value: readinessText(
+          environment ? environment.npmInstalled : null,
+          "Installed",
+        ),
+        variant: toVariant(environment ? environment.npmInstalled : null),
+      },
+      {
+        label: "Homebrew",
+        value: readinessText(
+          environment ? environment.brewInstalled : null,
+          "Installed",
+        ),
+        variant: toVariant(environment ? environment.brewInstalled : null),
+      },
+    ];
+  }, [environment, isWindowsEnvironment]);
 
   const runtimeGuidance = useMemo(() => {
     if (!environment) {
-      return "Checking WSL and Ubuntu status...";
+      return "Checking runtime status...";
+    }
+
+    if (!environment.isWindows) {
+      if (missingRuntimeDependencies.length > 0) {
+        return `Install ${joinWithAnd(missingRuntimeDependencies)} on your machine, then click Refresh.`;
+      }
+      return "Runtime is ready. Click Continue to move to the OpenClaw step.";
     }
 
     if (rebootStillPending || setupState.stage === "awaiting_reboot") {
@@ -427,7 +715,11 @@ export function App() {
       return "Ubuntu first-run setup is pending. Click Open Ubuntu Setup, create username/password, then click Resume Setup.";
     }
 
-    if (environment.wslReady && environment.wslUserConfigured && missingRuntimeDependencies.length > 0) {
+    if (
+      environment.wslReady &&
+      environment.wslUserConfigured &&
+      missingRuntimeDependencies.length > 0
+    ) {
       if (missingRuntimeDependencies.length === 3) {
         return "WSL runtime dependencies are incomplete. Click Install WSL Runtime to install Node.js, npm, and Homebrew.";
       }
@@ -439,7 +731,14 @@ export function App() {
     }
 
     return "Click Install WSL to continue setup.";
-  }, [environment, missingRuntimeDependencies, rebootStillPending, runtimeInstallActionLabel, runtimeReady, setupState.stage]);
+  }, [
+    environment,
+    missingRuntimeDependencies,
+    rebootStillPending,
+    runtimeInstallActionLabel,
+    runtimeReady,
+    setupState.stage,
+  ]);
 
   const clearActionProgressTimers = useCallback(() => {
     if (actionProgressTimerRef.current) {
@@ -457,14 +756,28 @@ export function App() {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className={compact ? "h-8 text-xs" : "text-xs"}>Item</TableHead>
-            <TableHead className={compact ? "h-8 text-xs text-right" : "text-xs text-right"}>Status</TableHead>
+            <TableHead className={compact ? "h-8 text-xs" : "text-xs"}>
+              Item
+            </TableHead>
+            <TableHead
+              className={
+                compact ? "h-8 text-xs text-right" : "text-xs text-right"
+              }
+            >
+              Status
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.label}>
-              <TableCell className={compact ? "py-2 text-xs text-muted-foreground" : "text-sm text-muted-foreground"}>
+              <TableCell
+                className={
+                  compact
+                    ? "py-2 text-xs text-muted-foreground"
+                    : "text-sm text-muted-foreground"
+                }
+              >
                 {row.label}
               </TableCell>
               <TableCell className={compact ? "py-2 text-right" : "text-right"}>
@@ -482,31 +795,41 @@ export function App() {
       return null;
     }
 
-    const toneClass = actionProgressState === "failed" ? "bg-[#d56a76]" : "bg-foreground";
-    const statusText = actionProgressState === "running"
-      ? "Running"
-      : actionProgressState === "done"
-        ? "Completed"
-        : "Failed";
+    const toneClass =
+      actionProgressState === "failed" ? "bg-[#d56a76]" : "bg-foreground";
+    const statusText =
+      actionProgressState === "running"
+        ? "Running"
+        : actionProgressState === "done"
+          ? "Completed"
+          : "Failed";
 
     return (
       <Card className="border-dashed">
         <CardContent className="space-y-2 pt-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{actionProgressLabel || "Working..."}</span>
-            <span>{statusText} - {actionProgressValue}%</span>
+            <span>
+              {statusText} - {actionProgressValue}%
+            </span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
               className={`h-full transition-all duration-300 ease-out ${toneClass}`}
-              style={{ width: `${Math.max(0, Math.min(100, actionProgressValue))}%` }}
+              style={{
+                width: `${Math.max(0, Math.min(100, actionProgressValue))}%`,
+              }}
             />
           </div>
           {actionProgressState === "done" ? (
-            <p className="text-xs text-green-600 dark:text-green-400">{actionProgressLabel} completed successfully.</p>
+            <p className="text-xs text-green-600 dark:text-green-400">
+              {actionProgressLabel} completed successfully.
+            </p>
           ) : null}
           {actionProgressState === "failed" && error ? (
-            <p className="text-xs text-[#f3c2c8]">{toFriendlyFailureMessage(error)}</p>
+            <p className="text-xs text-[#f3c2c8]">
+              {toFriendlyFailureMessage(error)}
+            </p>
           ) : null}
         </CardContent>
       </Card>
@@ -518,74 +841,77 @@ export function App() {
     setLogs((current) => [line, ...current].slice(0, 300));
   }, []);
 
-  const runAction = useCallback(async (
-    label: string,
-    fn: () => Promise<void>
-  ): Promise<boolean> => {
-    clearActionProgressTimers();
-    setBusyAction(label);
-    setError("");
-    setActionProgressLabel(label);
-    setActionProgressValue(8);
-    setActionProgressState("running");
-    appendLog(`${label}...`);
-    actionProgressTimerRef.current = setInterval(() => {
-      setActionProgressValue((current) => {
-        if (current >= 95) {
-          return current;
-        }
-        if (current < 35) {
-          return current + 7;
-        }
-        if (current < 70) {
-          return current + 4;
-        }
-        return current + 2;
-      });
-    }, 700);
+  const runAction = useCallback(
+    async (label: string, fn: () => Promise<void>): Promise<boolean> => {
+      clearActionProgressTimers();
+      setBusyAction(label);
+      setError("");
+      setActionProgressLabel(label);
+      setActionProgressValue(8);
+      setActionProgressState("running");
+      appendLog(`${label}...`);
+      actionProgressTimerRef.current = setInterval(() => {
+        setActionProgressValue((current) => {
+          if (current >= 95) {
+            return current;
+          }
+          if (current < 35) {
+            return current + 7;
+          }
+          if (current < 70) {
+            return current + 4;
+          }
+          return current + 2;
+        });
+      }, 700);
 
-    try {
-      await fn();
-      setActionProgressValue(100);
-      setActionProgressState("done");
-      appendLog(`${label}: done.`);
-      return true;
-    } catch (err) {
-      const message = toFriendlyFailureMessage(formatError(err));
-      setError(message);
-      setActionProgressValue(100);
-      setActionProgressState("failed");
-      appendLog(`${label}: failed - ${message}`);
-      return false;
-    } finally {
-      setBusyAction("");
-      if (actionProgressTimerRef.current) {
-        clearInterval(actionProgressTimerRef.current);
-        actionProgressTimerRef.current = null;
+      try {
+        await fn();
+        setActionProgressValue(100);
+        setActionProgressState("done");
+        appendLog(`${label}: done.`);
+        return true;
+      } catch (err) {
+        const message = toFriendlyFailureMessage(formatError(err));
+        setError(message);
+        setActionProgressValue(100);
+        setActionProgressState("failed");
+        appendLog(`${label}: failed - ${message}`);
+        return false;
+      } finally {
+        setBusyAction("");
+        if (actionProgressTimerRef.current) {
+          clearInterval(actionProgressTimerRef.current);
+          actionProgressTimerRef.current = null;
+        }
+        actionProgressHideTimerRef.current = setTimeout(() => {
+          setActionProgressState("idle");
+          setActionProgressValue(0);
+          setActionProgressLabel("");
+        }, 1400);
       }
-      actionProgressHideTimerRef.current = setTimeout(() => {
-        setActionProgressState("idle");
-        setActionProgressValue(0);
-        setActionProgressLabel("");
-      }, 1400);
-    }
-  }, [appendLog, clearActionProgressTimers]);
+    },
+    [appendLog, clearActionProgressTimers],
+  );
 
-  const refreshEnvironmentSetup = useCallback(async (withLog = false) => {
-    const [env, setup] = await Promise.all([
-      window.openclaw.getEnvironmentStatus(),
-      window.openclaw.getSetupState()
-    ]);
+  const refreshEnvironmentSetup = useCallback(
+    async (withLog = false) => {
+      const [env, setup] = await Promise.all([
+        window.openclaw.getEnvironmentStatus(),
+        window.openclaw.getSetupState(),
+      ]);
 
-    setEnvironment(env);
-    setSetupState(setup);
+      setEnvironment(env);
+      setSetupState(setup);
 
-    if (withLog) {
-      appendLog("Environment refreshed.");
-    }
+      if (withLog) {
+        appendLog("Environment refreshed.");
+      }
 
-    return env;
-  }, [appendLog]);
+      return env;
+    },
+    [appendLog],
+  );
 
   const refreshConfig = useCallback(async () => {
     const config = await window.openclaw.loadConfig();
@@ -609,36 +935,42 @@ export function App() {
       return {
         ...current,
         accountAuthorized: status.authenticated,
-        accountUserId: status.userId ?? ""
+        accountUserId: status.userId ?? "",
       };
     });
 
     return status;
   }, []);
 
-  const refreshChannels = useCallback(async (withLog = false) => {
-    const status = await window.openclaw.getChannelStatuses();
-    setChannelStatus(status);
-    if (withLog) {
-      appendLog("Channels refreshed.");
-    }
-    return status;
-  }, [appendLog]);
+  const refreshChannels = useCallback(
+    async (withLog = false) => {
+      const status = await window.openclaw.getChannelStatuses();
+      setChannelStatus(status);
+      if (withLog) {
+        appendLog("Channels refreshed.");
+      }
+      return status;
+    },
+    [appendLog],
+  );
 
-  const refreshModels = useCallback(async (withLog = false) => {
-    const status = await window.openclaw.getModelStatus();
-    setModelStatus(status);
-    if (!manageProvider && status.provider) {
-      setManageProvider(status.provider);
-    }
-    if (!manageModel && status.model) {
-      setManageModel(status.model);
-    }
-    if (withLog) {
-      appendLog(status.detail);
-    }
-    return status;
-  }, [appendLog, manageModel, manageProvider]);
+  const refreshModels = useCallback(
+    async (withLog = false) => {
+      const status = await window.openclaw.getModelStatus();
+      setModelStatus(status);
+      if (!manageProvider && status.provider) {
+        setManageProvider(status.provider);
+      }
+      if (!manageModel && status.model) {
+        setManageModel(status.model);
+      }
+      if (withLog) {
+        appendLog(status.detail);
+      }
+      return status;
+    },
+    [appendLog, manageModel, manageProvider],
+  );
 
   const refreshUpdate = useCallback(async () => {
     const status = await window.openclaw.getUpdateStatus();
@@ -646,80 +978,92 @@ export function App() {
     return status;
   }, []);
 
-  const refreshAll = useCallback(async (withLog = false) => {
-    const baselineResults = await Promise.allSettled([
-      refreshConfig(),
-      refreshAlwaysOn(),
-      refreshUpdate(),
-      refreshAuthSession()
-    ]);
+  const refreshAll = useCallback(
+    async (withLog = false) => {
+      const baselineResults = await Promise.allSettled([
+        refreshConfig(),
+        refreshAlwaysOn(),
+        refreshUpdate(),
+        refreshAuthSession(),
+      ]);
 
-    for (const result of baselineResults) {
-      if (result.status === "rejected") {
-        appendLog(`Startup check failed: ${formatError(result.reason)}`);
-      }
-    }
-
-    let env: EnvironmentStatus | null = null;
-    try {
-      env = await withTimeout(
-        refreshEnvironmentSetup(withLog),
-        20_000,
-        "Environment check timed out."
-      );
-    } catch (err) {
-      const message = formatError(err);
-      setError((current) => current || message);
-      appendLog(`Environment check failed: ${message}`);
-    }
-
-    if (env?.openClawInstalled) {
-      const detailResults = await Promise.allSettled([refreshChannels(), refreshModels()]);
-      for (const result of detailResults) {
+      for (const result of baselineResults) {
         if (result.status === "rejected") {
-          appendLog(`Startup detail check failed: ${formatError(result.reason)}`);
+          appendLog(`Startup check failed: ${formatError(result.reason)}`);
         }
       }
-    }
 
-    return env;
-  }, [
-    appendLog,
-    refreshAlwaysOn,
-    refreshAuthSession,
-    refreshChannels,
-    refreshConfig,
-    refreshEnvironmentSetup,
-    refreshModels,
-    refreshUpdate
-  ]);
+      let env: EnvironmentStatus | null = null;
+      try {
+        env = await withTimeout(
+          refreshEnvironmentSetup(withLog),
+          20_000,
+          "Environment check timed out.",
+        );
+      } catch (err) {
+        const message = formatError(err);
+        setError((current) => current || message);
+        appendLog(`Environment check failed: ${message}`);
+      }
+
+      if (env?.openClawInstalled) {
+        const detailResults = await Promise.allSettled([
+          refreshChannels(),
+          refreshModels(),
+        ]);
+        for (const result of detailResults) {
+          if (result.status === "rejected") {
+            appendLog(
+              `Startup detail check failed: ${formatError(result.reason)}`,
+            );
+          }
+        }
+      }
+
+      return env;
+    },
+    [
+      appendLog,
+      refreshAlwaysOn,
+      refreshAuthSession,
+      refreshChannels,
+      refreshConfig,
+      refreshEnvironmentSetup,
+      refreshModels,
+      refreshUpdate,
+    ],
+  );
 
   useEffect(() => {
     void refreshAll();
 
-    const removeSetupProgressListener = window.openclaw.onSetupProgress((event: SetupProgressEvent) => {
-      setSetupState((current) => ({
-        ...current,
-        stage: event.stage,
-        message: event.message,
-        updatedAt: event.timestamp
-      }));
-      setActionProgressValue((current) => {
-        if (actionProgressState !== "running") {
-          return current;
-        }
-        if (current >= 95) {
-          return current;
-        }
-        return current + 1;
-      });
-      appendLog(`${event.stage}: ${event.message}`);
-    });
+    const removeSetupProgressListener = window.openclaw.onSetupProgress(
+      (event: SetupProgressEvent) => {
+        setSetupState((current) => ({
+          ...current,
+          stage: event.stage,
+          message: event.message,
+          updatedAt: event.timestamp,
+        }));
+        setActionProgressValue((current) => {
+          if (actionProgressState !== "running") {
+            return current;
+          }
+          if (current >= 95) {
+            return current;
+          }
+          return current + 1;
+        });
+        appendLog(`${event.stage}: ${event.message}`);
+      },
+    );
 
-    const removeUpdateStatusListener = window.openclaw.onUpdateStatus((event: UpdateStatusEvent) => {
-      setUpdateStatus(event);
-      appendLog(`Update: ${event.message}`);
-    });
+    const removeUpdateStatusListener = window.openclaw.onUpdateStatus(
+      (event: UpdateStatusEvent) => {
+        setUpdateStatus(event);
+        appendLog(`Update: ${event.message}`);
+      },
+    );
 
     return () => {
       removeSetupProgressListener();
@@ -758,37 +1102,66 @@ export function App() {
   };
 
   const modelProviders = modelStatus?.availableProviders ?? [];
-  const modelOptions = manageProvider ? modelStatus?.modelsByProvider?.[manageProvider] ?? [] : [];
+  const modelOptions = manageProvider
+    ? (modelStatus?.modelsByProvider?.[manageProvider] ?? [])
+    : [];
 
   const settingsProvider = configDraft?.modelProvider ?? "";
-  const settingsModelOptions = settingsProvider ? modelStatus?.modelsByProvider?.[settingsProvider] ?? [] : [];
+  const settingsModelOptions = settingsProvider
+    ? (modelStatus?.modelsByProvider?.[settingsProvider] ?? [])
+    : [];
 
-  const installNode = () => runAction(runtimeInstallActionLabel, async () => {
-    const result = await window.openclaw.installNodeRuntimeStreaming();
-    summarizeCommandResult(runtimeInstallActionLabel, result, appendLog);
-    throwIfCommandFailed(runtimeInstallActionLabel, result);
-    await refreshAll();
-  });
+  const installNode = () =>
+    runAction(runtimeInstallActionLabel, async () => {
+      if (environment?.isWindows === false) {
+        const refreshed = await refreshEnvironmentSetup();
+        if (!(refreshed.nodeInstalled && refreshed.npmInstalled)) {
+          throw new Error(
+            "Install Node.js and npm first, then click Continue.",
+          );
+        }
+        return;
+      }
 
-  const restartComputer = useCallback(() => runAction("Restart Windows", async () => {
-    const result = await window.openclaw.restartComputer();
-    summarizeCommandResult("Restart Windows", result, appendLog);
-    throwIfCommandFailed("Restart Windows", result);
-  }), [appendLog, runAction]);
+      const result = await window.openclaw.installNodeRuntimeStreaming();
+      summarizeCommandResult(runtimeInstallActionLabel, result, appendLog);
+      throwIfCommandFailed(runtimeInstallActionLabel, result);
+      await refreshAll();
+    });
 
-  const openWslUserSetup = useCallback(() => runAction("Open Ubuntu setup", async () => {
-    const result = await window.openclaw.openWslUserSetup();
-    summarizeCommandResult("Open Ubuntu setup", result, appendLog);
-    throwIfCommandFailed("Open Ubuntu setup", result);
-    appendLog("Finish Ubuntu username/password in the opened terminal, then click Resume Setup.");
-  }), [appendLog, runAction]);
+  const restartComputer = useCallback(
+    () =>
+      runAction("Restart Windows", async () => {
+        const result = await window.openclaw.restartComputer();
+        summarizeCommandResult("Restart Windows", result, appendLog);
+        throwIfCommandFailed("Restart Windows", result);
+      }),
+    [appendLog, runAction],
+  );
 
-  const resumeGuidedSetup = useCallback(() => runAction("Resume setup", async () => {
-    const setup = await window.openclaw.runGuidedSetup();
-    setSetupState(setup);
-    appendLog(`Setup: ${setup.message}`);
-    await refreshAll();
-  }), [appendLog, refreshAll, runAction]);
+  const openWslUserSetup = useCallback(
+    () =>
+      runAction("Open Ubuntu setup", async () => {
+        const result = await window.openclaw.openWslUserSetup();
+        summarizeCommandResult("Open Ubuntu setup", result, appendLog);
+        throwIfCommandFailed("Open Ubuntu setup", result);
+        appendLog(
+          "Finish Ubuntu username/password in the opened terminal, then click Resume Setup.",
+        );
+      }),
+    [appendLog, runAction],
+  );
+
+  const resumeGuidedSetup = useCallback(
+    () =>
+      runAction("Resume setup", async () => {
+        const setup = await window.openclaw.runGuidedSetup();
+        setSetupState(setup);
+        appendLog(`Setup: ${setup.message}`);
+        await refreshAll();
+      }),
+    [appendLog, refreshAll, runAction],
+  );
 
   useEffect(() => {
     if (rebootAutoResumeAttemptedRef.current) {
@@ -819,7 +1192,12 @@ export function App() {
     if (!configDraft || configDraft.onboardingCompleted) {
       return;
     }
-    if (!awaitingWslUserSetup || !environment?.wslUserConfigured || runtimeReady === true || isBusy) {
+    if (
+      !awaitingWslUserSetup ||
+      !environment?.wslUserConfigured ||
+      runtimeReady === true ||
+      isBusy
+    ) {
       return;
     }
 
@@ -833,7 +1211,7 @@ export function App() {
     environment?.wslUserConfigured,
     isBusy,
     resumeGuidedSetup,
-    runtimeReady
+    runtimeReady,
   ]);
 
   useEffect(() => {
@@ -878,208 +1256,254 @@ export function App() {
     };
   }, [gatewayStartingUp, isBusy, refreshEnvironmentSetup]);
 
-  const installOpenClaw = () => runAction("OpenClaw install", async () => {
-    const result = await window.openclaw.installOpenClawStreaming();
-    summarizeCommandResult("OpenClaw install", result, appendLog);
-    throwIfCommandFailed("OpenClaw install", result);
-    await refreshAll();
-  });
+  const installOpenClaw = () =>
+    runAction("OpenClaw install", async () => {
+      const result = await window.openclaw.installOpenClawStreaming();
+      summarizeCommandResult("OpenClaw install", result, appendLog);
+      throwIfCommandFailed("OpenClaw install", result);
+      await refreshAll();
+    });
 
-  const runCliOnboard = () => runAction("CLI onboarding", async () => {
-    const result = await window.openclaw.runOnboarding();
-    summarizeCommandResult("CLI onboard", result, appendLog);
-    throwIfCommandFailed("CLI onboard", result);
-    await refreshAll();
-  });
+  const runCliOnboard = () =>
+    runAction("CLI onboarding", async () => {
+      const result = await window.openclaw.runOnboarding();
+      summarizeCommandResult("CLI onboard", result, appendLog);
+      throwIfCommandFailed("CLI onboard", result);
+      await refreshAll();
+    });
 
-  const startGateway = () => runAction("Gateway start", async () => {
-    const result = await window.openclaw.gatewayStart();
-    summarizeCommandResult("Gateway start", result, appendLog);
-    throwIfCommandFailed("Gateway start", result);
-    await refreshAll();
-  });
+  const startGateway = () =>
+    runAction("Gateway start", async () => {
+      const result = await window.openclaw.gatewayStart();
+      summarizeCommandResult("Gateway start", result, appendLog);
+      throwIfCommandFailed("Gateway start", result);
+      await refreshAll();
+    });
 
-  const stopGateway = () => runAction("Gateway stop", async () => {
-    const result = await window.openclaw.gatewayStop();
-    summarizeCommandResult("Gateway stop", result, appendLog);
-    throwIfCommandFailed("Gateway stop", result);
-    await refreshAll();
-  });
+  const stopGateway = () =>
+    runAction("Gateway stop", async () => {
+      const result = await window.openclaw.gatewayStop();
+      summarizeCommandResult("Gateway stop", result, appendLog);
+      throwIfCommandFailed("Gateway stop", result);
+      await refreshAll();
+    });
 
-  const completeOnboarding = () => runAction("Complete onboarding", async () => {
-    const setup = await window.openclaw.completeOnboardingFromUi();
-    setSetupState(setup);
-    if (setup.stage !== "completed") {
-      throw new Error(setup.message || "Onboarding could not be finalized yet.");
-    }
-    const nextConfig = await window.openclaw.saveConfig({ onboardingCompleted: true });
-    setConfigDraft(nextConfig);
-    setPage("chat");
-    void refreshAll();
-  });
-
-  const handleReconnectChannel = (channel: "whatsapp" | "telegram") => runAction(`${channel} reconnect`, async () => {
-    const item = await window.openclaw.reconnectChannel(channel);
-    appendLog(`${channel}: ${item.summary}`);
-    await refreshChannels();
-  });
-
-  const handleDisableChannel = (channel: "whatsapp" | "telegram") => runAction(`${channel} disable`, async () => {
-    const item = await window.openclaw.disableChannel(channel);
-    appendLog(`${channel}: ${item.summary}`);
-    await refreshChannels();
-  });
-
-  const saveTelegramToken = () => runAction("Telegram token", async () => {
-    if (!telegramToken.trim()) {
-      throw new Error("Bot token is required.");
-    }
-
-    const item = await window.openclaw.configureTelegramBot(telegramToken.trim());
-    appendLog(`telegram: ${item.summary}`);
-    setTelegramToken("");
-    await refreshChannels();
-  });
-
-  const applyModelSelection = () => runAction("Apply model", async () => {
-    if (!manageProvider || !manageModel) {
-      throw new Error("Select provider and model first.");
-    }
-
-    if (manageApiKey.trim().length >= 8) {
-      appendLog(`Saving API key for provider: ${manageProvider}...`);
-      const keyResult = await window.openclaw.saveModelApiKey(manageProvider, manageApiKey.trim());
-      appendLog(`Save API key result: ok=${keyResult.ok}, code=${keyResult.code}, stdout=${keyResult.stdout.slice(0, 200)}, stderr=${keyResult.stderr.slice(0, 200)}`);
-      if (!keyResult.ok) {
-        throw new Error(keyResult.stderr || keyResult.stdout || "Failed to save API key.");
+  const completeOnboarding = () =>
+    runAction("Complete onboarding", async () => {
+      const setup = await window.openclaw.completeOnboardingFromUi();
+      setSetupState(setup);
+      if (setup.stage !== "completed") {
+        throw new Error(
+          setup.message || "Onboarding could not be finalized yet.",
+        );
       }
-    } else if (manageApiKey.trim().length > 0) {
-      appendLog("API key too short (< 8 chars), skipping save.");
-    }
-
-    appendLog(`Applying model selection: ${manageProvider} / ${manageModel}...`);
-    const status = await window.openclaw.applyModelSelection(manageProvider, manageModel);
-    appendLog(`Model applied: provider=${status.provider}, model=${status.model}`);
-    setModelStatus(status);
-    const nextConfig = await window.openclaw.saveConfig({
-      modelProvider: manageProvider,
-      modelName: manageModel,
-      modelApiKey: manageApiKey.trim()
-    });
-    setConfigDraft(nextConfig);
-    appendLog(status.detail);
-  });
-
-  const saveSettings = () => runAction("Save settings", async () => {
-    if (!configDraft) {
-      return;
-    }
-
-    const saved = await window.openclaw.saveConfig({
-      profileName: configDraft.profileName,
-      workspacePath: configDraft.workspacePath,
-      modelProvider: configDraft.modelProvider,
-      modelName: configDraft.modelName,
-      modelApiKey: configDraft.modelApiKey,
-      authWebBaseUrl: configDraft.authWebBaseUrl,
-      accountAuthorized: configDraft.accountAuthorized,
-      accountUserId: configDraft.accountUserId,
-      autoStartGateway: configDraft.autoStartGateway,
-      onboardingCompleted: configDraft.onboardingCompleted
+      const nextConfig = await window.openclaw.saveConfig({
+        onboardingCompleted: true,
+      });
+      setConfigDraft(nextConfig);
+      setPage("chat");
+      void refreshAll();
     });
 
-    setConfigDraft(saved);
-    appendLog("Settings saved.");
-  });
-
-  const toggleAlwaysOn = (enabled: boolean) => runAction(enabled ? "Enable always-on" : "Disable always-on", async () => {
-    const status = await window.openclaw.setAlwaysOnGatewayEnabled(enabled);
-    setAlwaysOnStatus(status);
-    appendLog(status.detail);
-  });
-
-  const loadWorkspaceFile = () => runAction(`Load ${selectedFile}`, async () => {
-    if (!configDraft?.workspacePath) {
-      throw new Error("Set workspace path in Settings first.");
-    }
-
-    const payload = await window.openclaw.getWorkspaceFile(configDraft.workspacePath, selectedFile);
-    setWorkspaceFile(payload);
-    setWorkspaceFileEditor(payload.content || "");
-    appendLog(`Loaded ${selectedFile}.`);
-  });
-
-  const saveWorkspaceFile = () => runAction(`Save ${selectedFile}`, async () => {
-    if (!configDraft?.workspacePath) {
-      throw new Error("Set workspace path in Settings first.");
-    }
-
-    const payload = await window.openclaw.saveWorkspaceFile(configDraft.workspacePath, selectedFile, workspaceFileEditor);
-    setWorkspaceFile(payload);
-    appendLog(`Saved ${selectedFile}.`);
-  });
-
-  const checkForUpdates = () => runAction("Check updates", async () => {
-    const status = await window.openclaw.checkForUpdates();
-    setUpdateStatus(status);
-    appendLog(status.message);
-  });
-
-  const installUpdate = () => runAction("Install update", async () => {
-    await window.openclaw.installDownloadedUpdate();
-    appendLog("Installer requested. App may restart.");
-  });
-
-  const completeAuthHandoff = () => runAction("Browser sign-in", async () => {
-    const status = await window.openclaw.runAuthHandoff();
-    setAuthSession(status);
-
-    if (!status.reachable) {
-      throw new Error(status.error || "Auth service is unreachable.");
-    }
-
-    const nextConfig = await window.openclaw.saveConfig({
-      authWebBaseUrl: status.baseUrl,
-      accountAuthorized: status.authenticated,
-      accountUserId: status.userId ?? ""
+  const handleReconnectChannel = (channel: "whatsapp" | "telegram") =>
+    runAction(`${channel} reconnect`, async () => {
+      const item = await window.openclaw.reconnectChannel(channel);
+      appendLog(`${channel}: ${item.summary}`);
+      await refreshChannels();
     });
-    setConfigDraft(nextConfig);
 
-    if (!status.authenticated) {
-      throw new Error(status.error || "Sign-in was not completed.");
-    }
-  });
-
-  const verifyAuthSession = () => runAction("Verify sign-in", async () => {
-    const status = await window.openclaw.getAuthSessionStatus();
-    setAuthSession(status);
-
-    if (!status.reachable) {
-      throw new Error(status.error || "Auth service is unreachable.");
-    }
-
-    const nextConfig = await window.openclaw.saveConfig({
-      accountAuthorized: status.authenticated,
-      accountUserId: status.userId ?? ""
+  const handleDisableChannel = (channel: "whatsapp" | "telegram") =>
+    runAction(`${channel} disable`, async () => {
+      const item = await window.openclaw.disableChannel(channel);
+      appendLog(`${channel}: ${item.summary}`);
+      await refreshChannels();
     });
-    setConfigDraft(nextConfig);
 
-    if (!status.authenticated) {
-      throw new Error("You are not signed in yet.");
-    }
-  });
+  const saveTelegramToken = () =>
+    runAction("Telegram token", async () => {
+      if (!telegramToken.trim()) {
+        throw new Error("Bot token is required.");
+      }
 
-  const refreshAllAction = () => runAction("Refresh", async () => {
-    await refreshAll(true);
-  });
+      const item = await window.openclaw.configureTelegramBot(
+        telegramToken.trim(),
+      );
+      appendLog(`telegram: ${item.summary}`);
+      setTelegramToken("");
+      await refreshChannels();
+    });
+
+  const applyModelSelection = () =>
+    runAction("Apply model", async () => {
+      if (!manageProvider || !manageModel) {
+        throw new Error("Select provider and model first.");
+      }
+
+      if (manageApiKey.trim().length >= 8) {
+        appendLog(`Saving API key for provider: ${manageProvider}...`);
+        const keyResult = await window.openclaw.saveModelApiKey(
+          manageProvider,
+          manageApiKey.trim(),
+        );
+        appendLog(
+          `Save API key result: ok=${keyResult.ok}, code=${keyResult.code}, stdout=${keyResult.stdout.slice(0, 200)}, stderr=${keyResult.stderr.slice(0, 200)}`,
+        );
+        if (!keyResult.ok) {
+          throw new Error(
+            keyResult.stderr || keyResult.stdout || "Failed to save API key.",
+          );
+        }
+      } else if (manageApiKey.trim().length > 0) {
+        appendLog("API key too short (< 8 chars), skipping save.");
+      }
+
+      appendLog(
+        `Applying model selection: ${manageProvider} / ${manageModel}...`,
+      );
+      const status = await window.openclaw.applyModelSelection(
+        manageProvider,
+        manageModel,
+      );
+      appendLog(
+        `Model applied: provider=${status.provider}, model=${status.model}`,
+      );
+      setModelStatus(status);
+      const nextConfig = await window.openclaw.saveConfig({
+        modelProvider: manageProvider,
+        modelName: manageModel,
+        modelApiKey: manageApiKey.trim(),
+      });
+      setConfigDraft(nextConfig);
+      appendLog(status.detail);
+    });
+
+  const saveSettings = () =>
+    runAction("Save settings", async () => {
+      if (!configDraft) {
+        return;
+      }
+
+      const saved = await window.openclaw.saveConfig({
+        profileName: configDraft.profileName,
+        workspacePath: configDraft.workspacePath,
+        modelProvider: configDraft.modelProvider,
+        modelName: configDraft.modelName,
+        modelApiKey: configDraft.modelApiKey,
+        authWebBaseUrl: configDraft.authWebBaseUrl,
+        accountAuthorized: configDraft.accountAuthorized,
+        accountUserId: configDraft.accountUserId,
+        autoStartGateway: configDraft.autoStartGateway,
+        onboardingCompleted: configDraft.onboardingCompleted,
+      });
+
+      setConfigDraft(saved);
+      appendLog("Settings saved.");
+    });
+
+  const toggleAlwaysOn = (enabled: boolean) =>
+    runAction(enabled ? "Enable always-on" : "Disable always-on", async () => {
+      const status = await window.openclaw.setAlwaysOnGatewayEnabled(enabled);
+      setAlwaysOnStatus(status);
+      appendLog(status.detail);
+    });
+
+  const loadWorkspaceFile = () =>
+    runAction(`Load ${selectedFile}`, async () => {
+      if (!configDraft?.workspacePath) {
+        throw new Error("Set workspace path in Settings first.");
+      }
+
+      const payload = await window.openclaw.getWorkspaceFile(
+        configDraft.workspacePath,
+        selectedFile,
+      );
+      setWorkspaceFile(payload);
+      setWorkspaceFileEditor(payload.content || "");
+      appendLog(`Loaded ${selectedFile}.`);
+    });
+
+  const saveWorkspaceFile = () =>
+    runAction(`Save ${selectedFile}`, async () => {
+      if (!configDraft?.workspacePath) {
+        throw new Error("Set workspace path in Settings first.");
+      }
+
+      const payload = await window.openclaw.saveWorkspaceFile(
+        configDraft.workspacePath,
+        selectedFile,
+        workspaceFileEditor,
+      );
+      setWorkspaceFile(payload);
+      appendLog(`Saved ${selectedFile}.`);
+    });
+
+  const checkForUpdates = () =>
+    runAction("Check updates", async () => {
+      const status = await window.openclaw.checkForUpdates();
+      setUpdateStatus(status);
+      appendLog(status.message);
+    });
+
+  const installUpdate = () =>
+    runAction("Install update", async () => {
+      await window.openclaw.installDownloadedUpdate();
+      appendLog("Installer requested. App may restart.");
+    });
+
+  const completeAuthHandoff = () =>
+    runAction("Browser sign-in", async () => {
+      const status = await window.openclaw.runAuthHandoff();
+      setAuthSession(status);
+
+      if (!status.reachable) {
+        throw new Error(status.error || "Auth service is unreachable.");
+      }
+
+      const nextConfig = await window.openclaw.saveConfig({
+        authWebBaseUrl: status.baseUrl,
+        accountAuthorized: status.authenticated,
+        accountUserId: status.userId ?? "",
+      });
+      setConfigDraft(nextConfig);
+
+      if (!status.authenticated) {
+        throw new Error(status.error || "Sign-in was not completed.");
+      }
+    });
+
+  const verifyAuthSession = () =>
+    runAction("Verify sign-in", async () => {
+      const status = await window.openclaw.getAuthSessionStatus();
+      setAuthSession(status);
+
+      if (!status.reachable) {
+        throw new Error(status.error || "Auth service is unreachable.");
+      }
+
+      const nextConfig = await window.openclaw.saveConfig({
+        accountAuthorized: status.authenticated,
+        accountUserId: status.userId ?? "",
+      });
+      setConfigDraft(nextConfig);
+
+      if (!status.authenticated) {
+        throw new Error("You are not signed in yet.");
+      }
+    });
+
+  const refreshAllAction = () =>
+    runAction("Refresh", async () => {
+      await refreshAll(true);
+    });
 
   const skipModelSelection = () => {
     setError("");
     setModelStepSkipped(true);
-    appendLog("Model selection skipped in onboarding. Configure it later in Models.");
+    appendLog(
+      "Model selection skipped in onboarding. Configure it later in Models.",
+    );
     advanceOnboarding();
   };
-
 
   useEffect(() => {
     return () => {
@@ -1100,66 +1524,97 @@ export function App() {
               label: "WSL",
               value: environment?.wslAccessDenied
                 ? "Access denied"
-                : readinessText(environment ? environment.wslInstalled : null, "Installed"),
+                : readinessText(
+                    environment ? environment.wslInstalled : null,
+                    "Installed",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.wslInstalled : null)
+                : toVariant(environment ? environment.wslInstalled : null),
             },
             {
               label: "Ubuntu distro",
               value: environment?.wslAccessDenied
                 ? "Unknown"
-                : readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
+                : readinessText(
+                    environment ? environment.wslDistroInstalled : null,
+                    "Installed",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.wslDistroInstalled : null)
+                : toVariant(
+                    environment ? environment.wslDistroInstalled : null,
+                  ),
             },
             {
               label: "Ubuntu user",
               value: environment?.wslAccessDenied
                 ? "Unknown"
-                : readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
+                : readinessText(
+                    environment ? environment.wslUserConfigured : null,
+                    "Configured",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.wslUserConfigured : null)
+                : toVariant(environment ? environment.wslUserConfigured : null),
             },
             {
               label: "Node.js (WSL)",
               value: environment?.wslAccessDenied
                 ? "Unknown"
-                : readinessText(environment ? environment.nodeInstalled : null, "Installed"),
+                : readinessText(
+                    environment ? environment.nodeInstalled : null,
+                    "Installed",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.nodeInstalled : null)
+                : toVariant(environment ? environment.nodeInstalled : null),
             },
             {
               label: "npm (WSL)",
               value: environment?.wslAccessDenied
                 ? "Unknown"
-                : readinessText(environment ? environment.npmInstalled : null, "Installed"),
+                : readinessText(
+                    environment ? environment.npmInstalled : null,
+                    "Installed",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.npmInstalled : null)
+                : toVariant(environment ? environment.npmInstalled : null),
             },
             {
               label: "Homebrew (WSL)",
               value: environment?.wslAccessDenied
                 ? "Unknown"
-                : readinessText(environment ? environment.brewInstalled : null, "Installed"),
+                : readinessText(
+                    environment ? environment.brewInstalled : null,
+                    "Installed",
+                  ),
               variant: environment?.wslAccessDenied
                 ? toVariant(null)
-                : toVariant(environment ? environment.brewInstalled : null)
+                : toVariant(environment ? environment.brewInstalled : null),
             },
             {
               label: "OpenClaw CLI",
-              value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
-              variant: toVariant(environment ? environment.openClawInstalled : null)
+              value: readinessText(
+                environment ? environment.openClawInstalled : null,
+                "Installed",
+              ),
+              variant: toVariant(
+                environment ? environment.openClawInstalled : null,
+              ),
             },
             {
               label: "Gateway process",
-              value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
-              variant: toVariant(environment ? environment.gatewayRunning : null)
-            }
+              value: readinessText(
+                environment ? environment.gatewayRunning : null,
+                "Running",
+                "Stopped",
+              ),
+              variant: toVariant(
+                environment ? environment.gatewayRunning : null,
+              ),
+            },
           ])}
         </CardContent>
       </Card>
@@ -1170,39 +1625,82 @@ export function App() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Button onClick={installNode} disabled={isBusy || !environment?.isWindows || rebootStillPending}>
+            <Button
+              onClick={installNode}
+              disabled={isBusy || !environment?.isWindows || rebootStillPending}
+            >
               <Wrench className="h-3.5 w-3.5" />
               {runtimeInstallActionLabel}
             </Button>
             <Button
               variant="outline"
               onClick={resumeGuidedSetup}
-              disabled={isBusy || !(canResumeAfterReboot || (awaitingWslUserSetup && Boolean(environment?.wslUserConfigured)))}
+              disabled={
+                isBusy ||
+                !(
+                  canResumeAfterReboot ||
+                  (awaitingWslUserSetup &&
+                    Boolean(environment?.wslUserConfigured))
+                )
+              }
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Resume Setup
             </Button>
-            <Button variant="outline" onClick={restartComputer} disabled={isBusy || !rebootStillPending || !environment?.isWindows}>
+            <Button
+              variant="outline"
+              onClick={restartComputer}
+              disabled={
+                isBusy || !rebootStillPending || !environment?.isWindows
+              }
+            >
               <Power className="h-3.5 w-3.5" />
               Restart Windows
             </Button>
-            <Button variant="outline" onClick={openWslUserSetup} disabled={isBusy || !awaitingWslUserSetup || !!environment?.wslUserConfigured}>
+            <Button
+              variant="outline"
+              onClick={openWslUserSetup}
+              disabled={
+                isBusy ||
+                !awaitingWslUserSetup ||
+                !!environment?.wslUserConfigured
+              }
+            >
               <Wrench className="h-3.5 w-3.5" />
               Open Ubuntu Setup
             </Button>
-            <Button onClick={installOpenClaw} disabled={isBusy || runtimeReady !== true}>
+            <Button
+              onClick={installOpenClaw}
+              disabled={isBusy || runtimeReady !== true}
+            >
               <Bot className="h-3.5 w-3.5" />
               Install OpenClaw
             </Button>
-            <Button onClick={startGateway} disabled={isBusy || !environment?.openClawInstalled || Boolean(environment?.gatewayStartingUp)}>
+            <Button
+              onClick={startGateway}
+              disabled={
+                isBusy ||
+                !environment?.openClawInstalled ||
+                Boolean(environment?.gatewayStartingUp)
+              }
+            >
               <Play className="h-3.5 w-3.5" />
-              {environment?.gatewayStartingUp ? "Gateway Starting…" : "Start Gateway"}
+              {environment?.gatewayStartingUp
+                ? "Gateway Starting…"
+                : "Start Gateway"}
             </Button>
-            <Button onClick={runCliOnboard} disabled={isBusy || !environment?.openClawInstalled}>
+            <Button
+              onClick={runCliOnboard}
+              disabled={isBusy || !environment?.openClawInstalled}
+            >
               <Settings className="h-3.5 w-3.5" />
               CLI Onboard
             </Button>
-            <Button variant="outline" onClick={completeOnboarding} disabled={isBusy || gatewayReady !== true}>
+            <Button
+              variant="outline"
+              onClick={completeOnboarding}
+              disabled={isBusy || gatewayReady !== true}
+            >
               <Sparkles className="h-3.5 w-3.5" />
               Complete Onboarding
             </Button>
@@ -1225,10 +1723,18 @@ export function App() {
       telegram={telegram}
       telegramToken={telegramToken}
       onTelegramTokenChange={setTelegramToken}
-      onReconnectWhatsapp={() => { void handleReconnectChannel("whatsapp"); }}
-      onDisableWhatsapp={() => { void handleDisableChannel("whatsapp"); }}
-      onReconnectTelegram={() => { void handleReconnectChannel("telegram"); }}
-      onDisableTelegram={() => { void handleDisableChannel("telegram"); }}
+      onReconnectWhatsapp={() => {
+        void handleReconnectChannel("whatsapp");
+      }}
+      onDisableWhatsapp={() => {
+        void handleDisableChannel("whatsapp");
+      }}
+      onReconnectTelegram={() => {
+        void handleReconnectChannel("telegram");
+      }}
+      onDisableTelegram={() => {
+        void handleDisableChannel("telegram");
+      }}
       onSaveTelegramToken={saveTelegramToken}
     />
   );
@@ -1246,8 +1752,14 @@ export function App() {
       onProviderChange={applyManagedModelProvider}
       onModelChange={setManageModel}
       onApiKeyChange={setManageApiKey}
-      onApplyModelSelection={() => { void applyModelSelection(); }}
-      onRefreshModels={() => { void runAction("Refresh models", async () => { await refreshModels(true); }); }}
+      onApplyModelSelection={() => {
+        void applyModelSelection();
+      }}
+      onRefreshModels={() => {
+        void runAction("Refresh models", async () => {
+          await refreshModels(true);
+        });
+      }}
     />
   );
 
@@ -1277,13 +1789,20 @@ export function App() {
       alwaysOnEnabled={Boolean(alwaysOnStatus?.enabled)}
       alwaysOnSupported={Boolean(alwaysOnStatus?.supported)}
       alwaysOnDetail={alwaysOnStatus?.detail ?? "Checking..."}
-      onToggleAlwaysOn={(enabled) => { void toggleAlwaysOn(enabled); }}
+      onToggleAlwaysOn={(enabled) => {
+        void toggleAlwaysOn(enabled);
+      }}
       onSaveSettings={saveSettings}
-      onReloadConfig={() => { void runAction("Reload config", async () => { await refreshConfig(); }); }}
+      onReloadConfig={() => {
+        void runAction("Reload config", async () => {
+          await refreshConfig();
+        });
+      }}
     />
   );
 
-  const canInstallUpdate = updateStatus?.state === "downloaded" && updateStatus?.canInstall;
+  const canInstallUpdate =
+    updateStatus?.state === "downloaded" && updateStatus?.canInstall;
 
   const renderUpdatesPane = () => (
     <UpdatesPage
@@ -1307,8 +1826,12 @@ export function App() {
             notes={environment?.notes ?? []}
             detecting={environment === null}
             startingUp={Boolean(environment?.gatewayStartingUp)}
-            onStartGateway={() => { void startGateway(); }}
-            onStopGateway={() => { void stopGateway(); }}
+            onStartGateway={() => {
+              void startGateway();
+            }}
+            onStopGateway={() => {
+              void stopGateway();
+            }}
           />
         );
       case "chat":
@@ -1318,7 +1841,9 @@ export function App() {
             isBusy={isBusy}
             detecting={environment === null}
             startingUp={Boolean(environment?.gatewayStartingUp)}
-            onStartGateway={() => { void startGateway(); }}
+            onStartGateway={() => {
+              void startGateway();
+            }}
           />
         );
       case "channels":
@@ -1330,7 +1855,9 @@ export function App() {
             isBusy={isBusy}
             detecting={environment === null}
             startingUp={Boolean(environment?.gatewayStartingUp)}
-            onStartGateway={() => { void startGateway(); }}
+            onStartGateway={() => {
+              void startGateway();
+            }}
           />
         );
       case "cron":
@@ -1340,7 +1867,9 @@ export function App() {
             isBusy={isBusy}
             detecting={environment === null}
             startingUp={Boolean(environment?.gatewayStartingUp)}
-            onStartGateway={() => { void startGateway(); }}
+            onStartGateway={() => {
+              void startGateway();
+            }}
           />
         );
       case "models":
@@ -1358,7 +1887,8 @@ export function App() {
     }
   };
 
-  const currentOnboardingStep = onboardingSteps[wizardStepIndex] ?? onboardingSteps[0];
+  const currentOnboardingStep =
+    onboardingSteps[wizardStepIndex] ?? onboardingSteps[0];
   const canGoBackOnboarding = wizardStepIndex > 0;
 
   const onboardingStepDone = (stepId: OnboardingStepId) => {
@@ -1368,7 +1898,10 @@ export function App() {
       case "runtime":
         return runtimeReady === true;
       case "openclaw":
-        return Boolean(environment?.openClawInstalled) && Boolean(environment?.gatewayRunning);
+        return (
+          Boolean(environment?.openClawInstalled) &&
+          Boolean(environment?.gatewayRunning)
+        );
       case "model":
         return modelConfigured || modelStepSkipped;
       case "done":
@@ -1379,7 +1912,9 @@ export function App() {
   };
 
   const advanceOnboarding = () => {
-    setWizardStepIndex((current) => Math.min(current + 1, onboardingSteps.length - 1));
+    setWizardStepIndex((current) =>
+      Math.min(current + 1, onboardingSteps.length - 1),
+    );
   };
 
   const retreatOnboarding = () => {
@@ -1404,8 +1939,20 @@ export function App() {
     }
 
     if (step === "runtime") {
+      if (environment?.isWindows === false) {
+        const env = await refreshEnvironmentSetup();
+        if (env.nodeInstalled && env.npmInstalled) {
+          advanceOnboarding();
+          return;
+        }
+        setError("Install Node.js and npm first, then click Continue.");
+        return;
+      }
+
       if (environment?.wslAccessDenied) {
-        setError("Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session and retry.");
+        setError(
+          "Windows blocked WSL distro access for this session. Reopen OpenClaw Desktop in your normal user session and retry.",
+        );
         return;
       }
       if (awaitingWslUserSetup && !environment?.wslUserConfigured) {
@@ -1416,13 +1963,22 @@ export function App() {
         await restartComputer();
         return;
       }
-      if ((canResumeAfterReboot || awaitingWslUserSetup) && runtimeReady !== true) {
+      if (
+        (canResumeAfterReboot || awaitingWslUserSetup) &&
+        runtimeReady !== true
+      ) {
         const ok = await resumeGuidedSetup();
         if (!ok) {
           return;
         }
         const env = await refreshEnvironmentSetup();
-        if (env.wslReady && env.wslUserConfigured && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+        if (
+          env.wslReady &&
+          env.wslUserConfigured &&
+          env.nodeInstalled &&
+          env.npmInstalled &&
+          env.brewInstalled
+        ) {
           advanceOnboarding();
         }
         return;
@@ -1436,7 +1992,13 @@ export function App() {
         return;
       }
       const env = await refreshEnvironmentSetup();
-      if (env.wslReady && env.wslUserConfigured && env.nodeInstalled && env.npmInstalled && env.brewInstalled) {
+      if (
+        env.wslReady &&
+        env.wslUserConfigured &&
+        env.nodeInstalled &&
+        env.npmInstalled &&
+        env.brewInstalled
+      ) {
         advanceOnboarding();
       }
       return;
@@ -1513,18 +2075,25 @@ export function App() {
       case "welcome":
         return configDraft?.accountAuthorized ? "Continue" : "Sign In";
       case "runtime":
+        if (environment?.isWindows === false) {
+          return runtimeReady ? "Continue" : "Refresh Runtime";
+        }
         if (awaitingWslUserSetup && !environment?.wslUserConfigured) {
           return "Open Ubuntu Setup";
         }
         if (rebootStillPending) {
           return "Restart Windows";
         }
-        if ((canResumeAfterReboot || awaitingWslUserSetup) && runtimeReady !== true) {
+        if (
+          (canResumeAfterReboot || awaitingWslUserSetup) &&
+          runtimeReady !== true
+        ) {
           return "Resume Setup";
         }
         return runtimeReady ? "Continue" : runtimeInstallActionLabel;
       case "openclaw":
-        if (environment?.openClawInstalled && environment?.gatewayRunning) return "Continue";
+        if (environment?.openClawInstalled && environment?.gatewayRunning)
+          return "Continue";
         if (environment?.openClawInstalled) return "Start Gateway";
         return "Install OpenClaw";
       case "model":
@@ -1553,10 +2122,14 @@ export function App() {
             {onboardingSteps.map((step, index) => (
               <div key={step.id} className="flex items-center">
                 <div className="flex flex-col">
-                  <span className={`text-xs font-medium ${index === wizardStepIndex ? "text-foreground" : "text-muted-foreground"}`}>
+                  <span
+                    className={`text-xs font-medium ${index === wizardStepIndex ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {step.label}
                   </span>
-                  <div className={`mt-1 h-0.5 rounded-full ${index <= wizardStepIndex ? "bg-foreground" : "bg-muted"}`} />
+                  <div
+                    className={`mt-1 h-0.5 rounded-full ${index <= wizardStepIndex ? "bg-foreground" : "bg-muted"}`}
+                  />
                 </div>
                 {index < onboardingSteps.length - 1 && (
                   <ChevronRight className="mx-3 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
@@ -1570,12 +2143,20 @@ export function App() {
           <section className="flex min-h-0 flex-col p-8">
             <div className="mb-6">
               {canGoBackOnboarding ? (
-                <Button variant="ghost" className="mb-4 px-0 text-sm" onClick={retreatOnboarding}>
+                <Button
+                  variant="ghost"
+                  className="mb-4 px-0 text-sm"
+                  onClick={retreatOnboarding}
+                >
                   Back
                 </Button>
               ) : null}
-              <h2 className="text-4xl font-semibold tracking-tight">{currentOnboardingStep.title}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{currentOnboardingStep.subtitle}</p>
+              <h2 className="text-4xl font-semibold tracking-tight">
+                {currentOnboardingStep.title}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {currentOnboardingStep.subtitle}
+              </p>
             </div>
 
             <div className="flex-1 space-y-4">
@@ -1585,15 +2166,26 @@ export function App() {
                     <p>{configDraft?.authWebBaseUrl || authSession?.baseUrl}</p>
                     <div className="flex items-center gap-2">
                       <span>Session</span>
-                      <Badge variant={configDraft?.accountAuthorized ? "success" : "warning"}>
-                        {configDraft?.accountAuthorized ? "Signed in" : "Signed out"}
+                      <Badge
+                        variant={
+                          configDraft?.accountAuthorized ? "success" : "warning"
+                        }
+                      >
+                        {configDraft?.accountAuthorized
+                          ? "Signed in"
+                          : "Signed out"}
                       </Badge>
                     </div>
                     {configDraft?.accountUserId ? (
-                      <p className="text-xs">User: {configDraft.accountUserId}</p>
+                      <p className="text-xs">
+                        User: {configDraft.accountUserId}
+                      </p>
                     ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => void completeAuthHandoff()} disabled={isBusy}>
+                      <Button
+                        onClick={() => void completeAuthHandoff()}
+                        disabled={isBusy}
+                      >
                         Sign In
                       </Button>
                     </div>
@@ -1603,71 +2195,19 @@ export function App() {
 
               {currentOnboardingStep.id === "runtime" ? (
                 <div className="space-y-3">
-                  {renderStatusTable([
-                    {
-                      label: "WSL",
-                      value: environment?.wslAccessDenied
-                        ? "Access denied"
-                        : readinessText(environment ? environment.wslInstalled : null, "Installed"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.wslInstalled : null)
-                    },
-                    {
-                      label: "Ubuntu distro",
-                      value: environment?.wslAccessDenied
-                        ? "Unknown"
-                        : readinessText(environment ? environment.wslDistroInstalled : null, "Installed"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.wslDistroInstalled : null)
-                    },
-                    {
-                      label: "Ubuntu user",
-                      value: environment?.wslAccessDenied
-                        ? "Unknown"
-                        : readinessText(environment ? environment.wslUserConfigured : null, "Configured"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.wslUserConfigured : null)
-                    },
-                    {
-                      label: "Node.js (WSL)",
-                      value: environment?.wslAccessDenied
-                        ? "Unknown"
-                        : readinessText(environment ? environment.nodeInstalled : null, "Installed"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.nodeInstalled : null)
-                    },
-                    {
-                      label: "npm (WSL)",
-                      value: environment?.wslAccessDenied
-                        ? "Unknown"
-                        : readinessText(environment ? environment.npmInstalled : null, "Installed"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.npmInstalled : null)
-                    },
-                    {
-                      label: "Homebrew (WSL)",
-                      value: environment?.wslAccessDenied
-                        ? "Unknown"
-                        : readinessText(environment ? environment.brewInstalled : null, "Installed"),
-                      variant: environment?.wslAccessDenied
-                        ? toVariant(null)
-                        : toVariant(environment ? environment.brewInstalled : null)
-                    }
-                  ])}
-                  {environment?.wslAccessDenied ? (
+                  {renderStatusTable(runtimeStatusRows)}
+                  {isWindowsEnvironment && environment?.wslAccessDenied ? (
                     <Card>
                       <CardContent className="pt-4 text-sm text-muted-foreground">
-                        WSL is present, but this session cannot enumerate distros due to Windows permissions (`E_ACCESSDENIED`).
-                        Run OpenClaw Desktop in your normal user session and verify WSL access with `wsl -l -v`.
+                        WSL is present, but this session cannot enumerate
+                        distros due to Windows permissions (`E_ACCESSDENIED`).
+                        Run OpenClaw Desktop in your normal user session and
+                        verify WSL access with `wsl -l -v`.
                       </CardContent>
                     </Card>
                   ) : null}
-                  {awaitingReboot || awaitingWslUserSetup ? (
+                  {isWindowsEnvironment &&
+                  (awaitingReboot || awaitingWslUserSetup) ? (
                     <Card>
                       <CardContent className="pt-4 text-sm text-muted-foreground">
                         {awaitingWslUserSetup && !environment?.wslUserConfigured
@@ -1700,39 +2240,62 @@ export function App() {
                 </div>
               ) : null}
 
-              {currentOnboardingStep.id === "openclaw" ? (
-                renderStatusTable([
-                  {
-                    label: "OpenClaw CLI",
-                    value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
-                    variant: toVariant(environment ? environment.openClawInstalled : null)
-                  },
-                  {
-                    label: "Gateway",
-                    value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
-                    variant: toVariant(environment ? environment.gatewayRunning : null)
-                  }
-                ])
-              ) : null}
+              {currentOnboardingStep.id === "openclaw"
+                ? renderStatusTable([
+                    {
+                      label: "OpenClaw CLI",
+                      value: readinessText(
+                        environment ? environment.openClawInstalled : null,
+                        "Installed",
+                      ),
+                      variant: toVariant(
+                        environment ? environment.openClawInstalled : null,
+                      ),
+                    },
+                    {
+                      label: "Gateway",
+                      value: readinessText(
+                        environment ? environment.gatewayRunning : null,
+                        "Running",
+                        "Stopped",
+                      ),
+                      variant: toVariant(
+                        environment ? environment.gatewayRunning : null,
+                      ),
+                    },
+                  ])
+                : null}
 
               {currentOnboardingStep.id === "model" ? (
                 <Card>
                   <CardContent className="space-y-3 pt-5">
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Provider</p>
-                      <Select value={manageProvider} onChange={(event) => applyManagedModelProvider(event.target.value)}>
+                      <Select
+                        value={manageProvider}
+                        onChange={(event) =>
+                          applyManagedModelProvider(event.target.value)
+                        }
+                      >
                         <option value="">Select provider</option>
                         {modelProviders.map((provider) => (
-                          <option key={provider} value={provider}>{provider}</option>
+                          <option key={provider} value={provider}>
+                            {provider}
+                          </option>
                         ))}
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Model</p>
-                      <Select value={manageModel} onChange={(event) => setManageModel(event.target.value)}>
+                      <Select
+                        value={manageModel}
+                        onChange={(event) => setManageModel(event.target.value)}
+                      >
                         <option value="">Select model</option>
                         {modelOptions.map((model) => (
-                          <option key={model} value={model}>{modelStatus?.modelDisplayNames?.[model] || model}</option>
+                          <option key={model} value={model}>
+                            {modelStatus?.modelDisplayNames?.[model] || model}
+                          </option>
                         ))}
                       </Select>
                     </div>
@@ -1742,11 +2305,16 @@ export function App() {
                         type="password"
                         placeholder="Paste API key"
                         value={manageApiKey}
-                        onChange={(event) => setManageApiKey(event.target.value)}
+                        onChange={(event) =>
+                          setManageApiKey(event.target.value)
+                        }
                       />
-                      {manageApiKey.length > 0 && manageApiKey.trim().length < 8 && (
-                        <p className="text-xs text-destructive">API key must be at least 8 characters.</p>
-                      )}
+                      {manageApiKey.length > 0 &&
+                        manageApiKey.trim().length < 8 && (
+                          <p className="text-xs text-destructive">
+                            API key must be at least 8 characters.
+                          </p>
+                        )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1772,7 +2340,11 @@ export function App() {
                 variant="primary"
                 className="h-12 px-8 text-base font-semibold"
                 onClick={() => void runOnboardingStepPrimary()}
-                disabled={isBusy || (currentOnboardingStep.id === "done" && !onboardingStepDone("model"))}
+                disabled={
+                  isBusy ||
+                  (currentOnboardingStep.id === "done" &&
+                    !onboardingStepDone("model"))
+                }
               >
                 {onboardingPrimaryLabel}
               </Button>
@@ -1791,7 +2363,11 @@ export function App() {
 
           <aside className="border-l bg-muted/20 p-6 max-[1100px]:border-l-0 max-[1100px]:border-t">
             <div className="flex h-full items-center justify-center rounded-lg border bg-card/80 p-10">
-              <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-full max-w-[360px]" />
+              <img
+                src={brandLogoSrc}
+                alt="OpenClaw"
+                className="h-auto w-full max-w-[360px]"
+              />
             </div>
           </aside>
         </div>
@@ -1814,33 +2390,44 @@ export function App() {
   const allNavItems = [...mainNavItems, ...manageNavItems];
   const activeNavItem = allNavItems.find((item) => item.key === page);
   const pageTitle = activeNavItem?.label ?? "Overview";
-  const pageDescription = page === "overview"
-    ? "Gateway status and setup controls"
-    : page === "chat"
-      ? "Native chat interface"
-      : page === "channels"
-        ? "Manage channel connectivity"
-        : page === "sessions"
-          ? "Manage chat sessions"
-          : page === "cron"
-            ? "Manage scheduled jobs"
-            : page === "models"
-              ? "Configure model provider and selection"
-              : page === "files"
-                ? "Edit workspace files"
-                : page === "settings"
-                  ? "Application and gateway settings"
-                  : page === "updates"
-                    ? "Desktop app updates"
-                    : "Live diagnostics and logs";
+  const pageDescription =
+    page === "overview"
+      ? "Gateway status and setup controls"
+      : page === "chat"
+        ? "Native chat interface"
+        : page === "channels"
+          ? "Manage channel connectivity"
+          : page === "sessions"
+            ? "Manage chat sessions"
+            : page === "cron"
+              ? "Manage scheduled jobs"
+              : page === "models"
+                ? "Configure model provider and selection"
+                : page === "files"
+                  ? "Edit workspace files"
+                  : page === "settings"
+                    ? "Application and gateway settings"
+                    : page === "updates"
+                      ? "Desktop app updates"
+                      : "Live diagnostics and logs";
 
   return (
     <div className="h-full w-full bg-sidebar p-3">
-      <div className={`grid h-full gap-3 max-[1360px]:grid-cols-1 ${sidebarCollapsed ? "grid-cols-[56px_minmax(0,1fr)_320px]" : "grid-cols-[290px_minmax(0,1fr)_320px]"}`}>
+      <div
+        className={`grid h-full gap-3 max-[1360px]:grid-cols-1 ${sidebarCollapsed ? "grid-cols-[56px_minmax(0,1fr)_320px]" : "grid-cols-[290px_minmax(0,1fr)_320px]"}`}
+      >
         <Sidebar>
           <SidebarHeader>
-            <div className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
-              {!sidebarCollapsed && <img src={brandLogoSrc} alt="OpenClaw" className="h-auto w-36" />}
+            <div
+              className={`flex items-center ${sidebarCollapsed ? "justify-center" : "justify-between"}`}
+            >
+              {!sidebarCollapsed && (
+                <img
+                  src={brandLogoSrc}
+                  alt="OpenClaw"
+                  className="h-auto w-36"
+                />
+              )}
               <Button
                 variant="ghost"
                 className="flex-shrink-0 px-2"
@@ -1874,26 +2461,43 @@ export function App() {
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
-
         </Sidebar>
 
         <SidebarInset className="overflow-hidden p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">{pageTitle}</h2>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {pageTitle}
+              </h2>
               <p className="text-xs text-muted-foreground">{pageDescription}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="default">{setupStageLabel(setupState.stage)}</Badge>
+              <Badge variant="default">
+                {setupStageLabel(setupState.stage)}
+              </Badge>
               <Button
                 variant="outline"
                 className="px-2"
-                onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={() =>
+                  setTheme((current) => (current === "dark" ? "light" : "dark"))
+                }
+                title={
+                  theme === "dark"
+                    ? "Switch to light theme"
+                    : "Switch to dark theme"
+                }
               >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
               </Button>
-              <Button variant="outline" onClick={refreshAllAction} disabled={isBusy}>
+              <Button
+                variant="outline"
+                onClick={refreshAllAction}
+                disabled={isBusy}
+              >
                 <RefreshCw className="h-4 w-4" />
                 Refresh
               </Button>
@@ -1937,17 +2541,35 @@ export function App() {
           <SidebarHeader>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Quick Actions</h2>
-              {busyAction ? <Badge variant="warning">Working</Badge> : <Badge variant="default">Idle</Badge>}
+              {busyAction ? (
+                <Badge variant="warning">Working</Badge>
+              ) : (
+                <Badge variant="default">Idle</Badge>
+              )}
             </div>
           </SidebarHeader>
 
           <SidebarContent className="px-3">
             <div className="grid grid-cols-1 gap-2">
-              <Button onClick={startGateway} disabled={isBusy || !environment?.openClawInstalled || environment === null}>
-                {environment === null ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              <Button
+                onClick={startGateway}
+                disabled={
+                  isBusy ||
+                  !environment?.openClawInstalled ||
+                  environment === null
+                }
+              >
+                {environment === null ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
                 {environment === null ? "Detecting…" : "Start Gateway"}
               </Button>
-              <Button onClick={stopGateway} disabled={isBusy || !environment?.openClawInstalled}>
+              <Button
+                onClick={stopGateway}
+                disabled={isBusy || !environment?.openClawInstalled}
+              >
                 <Square className="h-4 w-4" />
                 Stop Gateway
               </Button>
@@ -1957,30 +2579,47 @@ export function App() {
 
             {renderStatusTable([
               {
-                label: "WSL Runtime",
+                label: isWindowsEnvironment ? "WSL Runtime" : "Local Runtime",
                 value: readinessText(runtimeReady, "Ready", "Missing"),
-                variant: toVariant(runtimeReady)
+                variant: toVariant(runtimeReady),
               },
               {
                 label: "OpenClaw",
-                value: readinessText(environment ? environment.openClawInstalled : null, "Installed"),
-                variant: toVariant(environment ? environment.openClawInstalled : null)
+                value: readinessText(
+                  environment ? environment.openClawInstalled : null,
+                  "Installed",
+                ),
+                variant: toVariant(
+                  environment ? environment.openClawInstalled : null,
+                ),
               },
               {
                 label: "Gateway",
-                value: readinessText(environment ? environment.gatewayRunning : null, "Running", "Stopped"),
-                variant: toVariant(environment ? environment.gatewayRunning : null)
+                value: readinessText(
+                  environment ? environment.gatewayRunning : null,
+                  "Running",
+                  "Stopped",
+                ),
+                variant: toVariant(
+                  environment ? environment.gatewayRunning : null,
+                ),
               },
               {
                 label: "Onboarding",
-                value: configDraft?.onboardingCompleted ? "Completed" : "Pending",
-                variant: configDraft?.onboardingCompleted ? "success" : "warning"
-              }
+                value: configDraft?.onboardingCompleted
+                  ? "Completed"
+                  : "Pending",
+                variant: configDraft?.onboardingCompleted
+                  ? "success"
+                  : "warning",
+              },
             ])}
 
             <Separator className="my-4" />
 
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">System Notes</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              System Notes
+            </p>
             <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
               {(environment?.notes ?? ["No notes."]).map((note) => (
                 <li key={note}>- {note}</li>
@@ -1990,13 +2629,16 @@ export function App() {
 
           <SidebarFooter>
             {busyAction ? (
-              <p className="text-xs text-muted-foreground">Working: {busyAction}</p>
+              <p className="text-xs text-muted-foreground">
+                Working: {busyAction}
+              </p>
             ) : null}
-            {error ? <p className="mt-1 text-xs text-[#f3c2c8]">{error}</p> : null}
+            {error ? (
+              <p className="mt-1 text-xs text-[#f3c2c8]">{error}</p>
+            ) : null}
           </SidebarFooter>
         </Sidebar>
       </div>
     </div>
   );
 }
-
