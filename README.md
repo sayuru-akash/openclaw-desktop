@@ -1,5 +1,6 @@
 # OpenClaw Desktop
-<img width="400" height="400" alt="openclaw_logo_resized" src="https://github.com/user-attachments/assets/9e80a1a2-d8a1-4a8f-9a71-ff5f7d5d5591" />
+<img width="637" height="200" alt="openclaw_logo" src="https://github.com/user-attachments/assets/69219269-b315-4eac-919a-c5c16e5c7f9b" />
+
 
 
 Windows-first desktop app for [OpenClaw](https://github.com/openclaw). Install once, follow the guided setup, and start using OpenClaw — no terminal, no manual config files.
