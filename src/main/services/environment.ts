@@ -11,7 +11,7 @@ import type {
   WizardRunStatus,
   WizardStartParams,
   WizardStartResult,
-  WizardStatusResult
+  WizardStatusResult,
 } from "../../shared/types";
 import { access, appendFile, mkdir } from "node:fs/promises";
 import os from "node:os";
@@ -20,7 +20,7 @@ import { runCommand, runCommandStreaming } from "./command-runner";
 import {
   inferChannelStatusFromPayload,
   inferModelStatusFromPayload,
-  isScheduledTaskMissing
+  isScheduledTaskMissing,
 } from "./parsers";
 
 const ALWAYS_ON_TASK_NAME = "OpenClawDesktopAlwaysOnGateway";
@@ -75,11 +75,60 @@ export class EnvironmentService {
       openClawInstalled: false,
       gatewayRunning: false,
       gatewayStartingUp: false,
-      notes: []
+      notes: [],
     };
 
     if (!status.isWindows) {
-      status.notes.push("Setup checks are unavailable in this environment.");
+      status.nodeInstalled = await this.isLocalCommandAvailable(
+        this.resolveNodeCommand(),
+        ["--version"],
+      );
+      status.npmInstalled = await this.isLocalCommandAvailable(
+        this.resolveNpmCommand(),
+        ["--version"],
+      );
+      status.brewInstalled =
+        process.platform === "darwin"
+          ? await this.isLocalCommandAvailable("brew", ["--version"])
+          : false;
+      status.wslReady = status.nodeInstalled && status.npmInstalled;
+      status.wslUserConfigured = status.wslReady;
+
+      if (!status.nodeInstalled || !status.npmInstalled) {
+        status.notes.push(
+          "Local runtime dependencies are missing. Install Node.js and npm to continue.",
+        );
+      }
+
+      status.openClawInstalled = await this.isOpenClawAvailable();
+      if (!status.openClawInstalled) {
+        status.notes.push(
+          "OpenClaw CLI not found on this machine. Install OpenClaw from the app or your shell.",
+        );
+        return status;
+      }
+
+      const gatewayStatus = await this.gatewayStatus();
+      const processRunning =
+        gatewayStatus.ok &&
+        /running|active|ok/i.test(
+          `${gatewayStatus.stdout} ${gatewayStatus.stderr}`,
+        );
+
+      if (processRunning) {
+        const portReady = await this.isGatewayPortReady();
+        status.gatewayRunning = portReady;
+        if (!portReady) {
+          status.gatewayStartingUp = true;
+          status.notes.push(
+            "Gateway process is starting up - waiting for WebSocket port to become ready.",
+          );
+        }
+      } else {
+        status.gatewayRunning = false;
+        status.notes.push("Gateway is not running yet.");
+      }
+
       return status;
     }
 
@@ -88,7 +137,10 @@ export class EnvironmentService {
     status.wslAccessDenied = wslStatus.accessDenied;
     status.wslDistro = wslStatus.distro;
     status.wslDistroInstalled = wslStatus.distroInstalled;
-    status.wslReady = wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable;
+    status.wslReady =
+      wslStatus.wslInstalled &&
+      wslStatus.distroInstalled &&
+      wslStatus.distroReachable;
 
     if (!status.wslInstalled) {
       status.notes.push("WSL is not ready. Install WSL and Ubuntu first.");
@@ -96,7 +148,9 @@ export class EnvironmentService {
     }
 
     if (status.wslAccessDenied) {
-      status.notes.push("WSL is installed but distro access is denied in this Windows session. Run OpenClaw Desktop with normal user permissions or fix WSL policy permissions.");
+      status.notes.push(
+        "WSL is installed but distro access is denied in this Windows session. Run OpenClaw Desktop with normal user permissions or fix WSL policy permissions.",
+      );
       return status;
     }
 
@@ -106,13 +160,17 @@ export class EnvironmentService {
     }
 
     if (!wslStatus.distroReachable) {
-      status.notes.push(`WSL distro ${status.wslDistro} is registered but not reachable. Repair WSL and retry setup.`);
+      status.notes.push(
+        `WSL distro ${status.wslDistro} is registered but not reachable. Repair WSL and retry setup.`,
+      );
       return status;
     }
 
     status.wslUserConfigured = await this.isWslUserConfigured(status.wslDistro);
     if (!status.wslUserConfigured) {
-      status.notes.push("Finish Ubuntu first-run account setup (username/password), then resume setup.");
+      status.notes.push(
+        "Finish Ubuntu first-run account setup (username/password), then resume setup.",
+      );
       return status;
     }
 
@@ -124,7 +182,9 @@ export class EnvironmentService {
       status.notes.push("Runtime dependencies in WSL are not ready yet.");
       if (!status.nodeInstalled) {
         if (runtime.nodeVersion) {
-          status.notes.push(`Node.js ${runtime.nodeVersion} is too old. OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+ in WSL.`);
+          status.notes.push(
+            `Node.js ${runtime.nodeVersion} is too old. OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+ in WSL.`,
+          );
         } else {
           status.notes.push("node command is missing in WSL.");
         }
@@ -148,7 +208,11 @@ export class EnvironmentService {
     }
 
     const gatewayStatus = await this.gatewayStatus();
-    const processRunning = gatewayStatus.ok && /running|active|ok/i.test(`${gatewayStatus.stdout} ${gatewayStatus.stderr}`);
+    const processRunning =
+      gatewayStatus.ok &&
+      /running|active|ok/i.test(
+        `${gatewayStatus.stdout} ${gatewayStatus.stderr}`,
+      );
 
     if (processRunning) {
       // The gateway process is running, but it takes 15-30s to initialize
@@ -160,7 +224,9 @@ export class EnvironmentService {
       status.gatewayRunning = portReady;
       if (!portReady) {
         status.gatewayStartingUp = true;
-        status.notes.push("Gateway process is starting up — waiting for WebSocket port to become ready.");
+        status.notes.push(
+          "Gateway process is starting up — waiting for WebSocket port to become ready.",
+        );
       }
     } else {
       status.gatewayRunning = false;
@@ -174,7 +240,9 @@ export class EnvironmentService {
     return this.installNodeRuntimeInternal();
   }
 
-  public installNodeRuntimeStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+  public installNodeRuntimeStreaming(
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<CommandResult> {
     return this.installNodeRuntimeInternal(onLog);
   }
 
@@ -184,24 +252,30 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "WSL user setup is only available on Windows."
+        stderr: "WSL user setup is only available on Windows.",
       };
     }
 
     const wslStatus = await this.getWslStatus();
-    const distro = wslStatus.distroInstalled ? wslStatus.distro : this.getPreferredWslDistro();
+    const distro = wslStatus.distroInstalled
+      ? wslStatus.distro
+      : this.getPreferredWslDistro();
     const quotedDistro = this.quoteForSingleQuotedPowerShell(distro);
     const script = [
       "$ErrorActionPreference = 'Stop'",
       `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', ${quotedDistro}) -PassThru`,
       "Write-Output ('Launched WSL setup process id: ' + $process.Id)",
-      "exit 0"
+      "exit 0",
     ].join("; ");
 
-    return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
-      timeoutMs: 15_000,
-      env: this.buildCommandEnv()
-    });
+    return runCommand(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      {
+        timeoutMs: 15_000,
+        env: this.buildCommandEnv(),
+      },
+    );
   }
 
   public restartComputer(): Promise<CommandResult> {
@@ -210,13 +284,13 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Restart command is only available on Windows."
+        stderr: "Restart command is only available on Windows.",
       });
     }
 
     return runCommand("shutdown.exe", ["/r", "/t", "0"], {
       timeoutMs: 15_000,
-      env: this.buildCommandEnv()
+      env: this.buildCommandEnv(),
     });
   }
 
@@ -224,7 +298,9 @@ export class EnvironmentService {
     return this.installOpenClawInternal();
   }
 
-  public installOpenClawStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+  public installOpenClawStreaming(
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<CommandResult> {
     return this.installOpenClawInternal(onLog);
   }
 
@@ -232,25 +308,39 @@ export class EnvironmentService {
     return this.runOpenClaw(["onboard", "--install-daemon"]);
   }
 
-  public runOnboardingStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+  public runOnboardingStreaming(
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<CommandResult> {
     return this.runOpenClawStreaming(["onboard", "--install-daemon"], onLog);
   }
 
-  public wizardStart(params: WizardStartParams = {}): Promise<WizardStartResult> {
+  public wizardStart(
+    params: WizardStartParams = {},
+  ): Promise<WizardStartResult> {
     return this.runWizardCall<WizardStartResult>("wizard.start", params);
   }
 
-  public wizardNext(sessionId: string, answer?: WizardAnswer): Promise<WizardNextResult> {
+  public wizardNext(
+    sessionId: string,
+    answer?: WizardAnswer,
+  ): Promise<WizardNextResult> {
     const payload = answer ? { sessionId, answer } : { sessionId };
     return this.runWizardCall<WizardNextResult>("wizard.next", payload);
   }
 
   public wizardStatus(sessionId: string): Promise<WizardStatusResult> {
-    return this.runWizardCall<WizardStatusResult>("wizard.status", { sessionId });
+    return this.runWizardCall<WizardStatusResult>("wizard.status", {
+      sessionId,
+    });
   }
 
-  public wizardCancel(sessionId: string): Promise<{ status: WizardRunStatus; error?: string }> {
-    return this.runWizardCall<{ status: WizardRunStatus; error?: string }>("wizard.cancel", { sessionId });
+  public wizardCancel(
+    sessionId: string,
+  ): Promise<{ status: WizardRunStatus; error?: string }> {
+    return this.runWizardCall<{ status: WizardRunStatus; error?: string }>(
+      "wizard.cancel",
+      { sessionId },
+    );
   }
 
   private gatewayCallQueue: Promise<unknown> = Promise.resolve();
@@ -260,13 +350,16 @@ export class EnvironmentService {
     // Serialize gateway calls so only one WebSocket connection is open at a time.
     const queued = this.gatewayCallQueue.then(
       () => this.gatewayCallSerialized<T>(method, params),
-      () => this.gatewayCallSerialized<T>(method, params)
+      () => this.gatewayCallSerialized<T>(method, params),
     );
     this.gatewayCallQueue = queued.catch(() => {});
     return queued;
   }
 
-  private async gatewayCallSerialized<T>(method: string, params: unknown): Promise<T> {
+  private async gatewayCallSerialized<T>(
+    method: string,
+    params: unknown,
+  ): Promise<T> {
     const payload = JSON.stringify(params);
     const maxAttempts = 5;
     let lastError: Error | null = null;
@@ -278,15 +371,27 @@ export class EnvironmentService {
       if (token) {
         args.push("--token", token);
       }
-      console.info("[gatewayCallSerialized]", { method, attempt, hasToken: !!token });
+      console.info("[gatewayCallSerialized]", {
+        method,
+        attempt,
+        hasToken: !!token,
+      });
 
       const result = await this.runOpenClaw(args);
 
       if (!result.ok) {
         const errorText = result.stderr || result.stdout || `${method} failed`;
-        const isTransient = /1006|abnormal closure|ECONNREFUSED|ECONNRESET|EPIPE|gateway closed/i.test(errorText);
+        const isTransient =
+          /1006|abnormal closure|ECONNREFUSED|ECONNRESET|EPIPE|gateway closed/i.test(
+            errorText,
+          );
         lastError = new Error(`Gateway call '${method}' failed: ${errorText}`);
-        console.warn("[gatewayCallSerialized]", { method, attempt, isTransient, errorText: errorText.slice(0, 200) });
+        console.warn("[gatewayCallSerialized]", {
+          method,
+          attempt,
+          isTransient,
+          errorText: errorText.slice(0, 200),
+        });
 
         if (isTransient && attempt < maxAttempts) {
           // Token may have changed; clear cache before retry.
@@ -302,7 +407,11 @@ export class EnvironmentService {
       if (parsed && typeof parsed === "object" && "error" in parsed) {
         const errorValue = (parsed as { error?: unknown }).error;
         if (errorValue) {
-          throw new Error(typeof errorValue === "string" ? errorValue : JSON.stringify(errorValue));
+          throw new Error(
+            typeof errorValue === "string"
+              ? errorValue
+              : JSON.stringify(errorValue),
+          );
         }
       }
 
@@ -313,7 +422,10 @@ export class EnvironmentService {
       return parsed as T;
     }
 
-    throw lastError ?? new Error(`Gateway call '${method}' failed after ${maxAttempts} attempts`);
+    throw (
+      lastError ??
+      new Error(`Gateway call '${method}' failed after ${maxAttempts} attempts`)
+    );
   }
 
   /**
@@ -326,7 +438,10 @@ export class EnvironmentService {
    */
   private async resolveGatewayAuthToken(): Promise<string | null> {
     if (this.cachedGatewayAuthToken !== null) {
-      console.info("[resolveGatewayAuthToken] using cached token, hasToken:", !!this.cachedGatewayAuthToken);
+      console.info(
+        "[resolveGatewayAuthToken] using cached token, hasToken:",
+        !!this.cachedGatewayAuthToken,
+      );
       return this.cachedGatewayAuthToken || null;
     }
 
@@ -338,20 +453,30 @@ export class EnvironmentService {
           wslInstalled: wslStatus.wslInstalled,
           distroInstalled: wslStatus.distroInstalled,
           distroReachable: wslStatus.distroReachable,
-          distro: wslStatus.distro
+          distro: wslStatus.distro,
         });
-        if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
-          const brewUser = await this.resolveWslBrewUser(wslStatus.distro) || "root";
+        if (
+          wslStatus.wslInstalled &&
+          wslStatus.distroInstalled &&
+          wslStatus.distroReachable
+        ) {
+          const brewUser =
+            (await this.resolveWslBrewUser(wslStatus.distro)) || "root";
           const configPath = "/home/" + brewUser + "/.openclaw/openclaw.json";
-          console.info("[resolveGatewayAuthToken] reading config:", { brewUser, configPath });
-          const result = await runCommand("wsl.exe", [
-            "-d", wslStatus.distro, "--", "cat", configPath
-          ], { timeoutMs: 10_000, env: this.buildCommandEnv() });
+          console.info("[resolveGatewayAuthToken] reading config:", {
+            brewUser,
+            configPath,
+          });
+          const result = await runCommand(
+            "wsl.exe",
+            ["-d", wslStatus.distro, "--", "cat", configPath],
+            { timeoutMs: 10_000, env: this.buildCommandEnv() },
+          );
           console.info("[resolveGatewayAuthToken] cat result:", {
             ok: result.ok,
             stdoutLen: result.stdout?.length ?? 0,
             stderrLen: result.stderr?.length ?? 0,
-            stderr: (result.stderr || "").slice(0, 200)
+            stderr: (result.stderr || "").slice(0, 200),
           });
           configJson = result.ok ? result.stdout : "";
         }
@@ -367,15 +492,23 @@ export class EnvironmentService {
       }
 
       if (configJson) {
-        const config = JSON.parse(configJson) as { gateway?: { auth?: { token?: string } } };
+        const config = JSON.parse(configJson) as {
+          gateway?: { auth?: { token?: string } };
+        };
         const token = config?.gateway?.auth?.token?.trim() || "";
-        console.info("[resolveGatewayAuthToken] parsed token:", { hasToken: !!token, tokenLen: token.length });
+        console.info("[resolveGatewayAuthToken] parsed token:", {
+          hasToken: !!token,
+          tokenLen: token.length,
+        });
         this.cachedGatewayAuthToken = token;
         return token || null;
       }
       console.warn("[resolveGatewayAuthToken] no config JSON obtained");
     } catch (err) {
-      console.error("[resolveGatewayAuthToken] error:", err instanceof Error ? err.message : String(err));
+      console.error(
+        "[resolveGatewayAuthToken] error:",
+        err instanceof Error ? err.message : String(err),
+      );
     }
 
     this.cachedGatewayAuthToken = "";
@@ -395,15 +528,30 @@ export class EnvironmentService {
   private async isGatewayPortReady(port = 18789): Promise<boolean> {
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+      if (
+        !wslStatus.wslInstalled ||
+        !wslStatus.distroInstalled ||
+        !wslStatus.distroReachable
+      ) {
         return false;
       }
-      const result = await runCommand("wsl.exe", [
-        "-d", wslStatus.distro, "--", "bash", "-c",
-        `nc -z -w 2 127.0.0.1 ${port} 2>/dev/null && echo PORT_OPEN || echo PORT_CLOSED`
-      ], { timeoutMs: 8_000, env: this.buildCommandEnv() });
+      const result = await runCommand(
+        "wsl.exe",
+        [
+          "-d",
+          wslStatus.distro,
+          "--",
+          "bash",
+          "-c",
+          `nc -z -w 2 127.0.0.1 ${port} 2>/dev/null && echo PORT_OPEN || echo PORT_CLOSED`,
+        ],
+        { timeoutMs: 8_000, env: this.buildCommandEnv() },
+      );
       const output = (result.stdout || "").trim();
-      console.info("[isGatewayPortReady]", { ok: result.ok, output: output.slice(0, 50) });
+      console.info("[isGatewayPortReady]", {
+        ok: result.ok,
+        output: output.slice(0, 50),
+      });
       return result.ok && output.includes("PORT_OPEN");
     }
     // On non-Windows, do a direct TCP connect
@@ -411,23 +559,97 @@ export class EnvironmentService {
       const net = await import("node:net");
       return await new Promise<boolean>((resolve) => {
         const socket = new net.Socket();
-        const timer = setTimeout(() => { socket.destroy(); resolve(false); }, 3000);
-        socket.connect(port, "127.0.0.1", () => { clearTimeout(timer); socket.destroy(); resolve(true); });
-        socket.on("error", () => { clearTimeout(timer); socket.destroy(); resolve(false); });
+        const timer = setTimeout(() => {
+          socket.destroy();
+          console.info("[isGatewayPortReady] TCP timeout after 3s");
+          resolve(false);
+        }, 3000);
+        socket.connect(port, "127.0.0.1", () => {
+          clearTimeout(timer);
+          socket.destroy();
+          console.info("[isGatewayPortReady] TCP connection successful");
+          resolve(true);
+        });
+        socket.on("error", (err) => {
+          clearTimeout(timer);
+          socket.destroy();
+          console.info("[isGatewayPortReady] TCP connection error", {
+            code: (err as NodeJS.ErrnoException)?.code,
+            message: err.message,
+          });
+          resolve(false);
+        });
       });
-    } catch {
+    } catch (err) {
+      console.error(
+        "[isGatewayPortReady] Unexpected error",
+        err instanceof Error ? err.message : String(err),
+      );
       return false;
     }
   }
 
   public async gatewayStart(): Promise<CommandResult> {
+    if (process.platform === "darwin") {
+      await this.ensureGatewayServiceInstalledOnDarwin();
+    }
     await this.ensureGatewayModeLocal();
-    return this.runOpenClaw(["gateway", "start"]);
+    const result = await this.runOpenClaw(["gateway", "start"]);
+    if (result.ok) {
+      // Wait for the gateway port to become ready before returning,
+      // since the process needs 15-30s to initialize after starting.
+      await this.waitForGatewayPortReady(60_000);
+    }
+    return result;
   }
 
-  public async gatewayStartStreaming(onLog: (line: string, stream: "stdout" | "stderr") => void): Promise<CommandResult> {
+  public async gatewayStartStreaming(
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<CommandResult> {
+    if (process.platform === "darwin") {
+      await this.ensureGatewayServiceInstalledOnDarwin(onLog);
+    }
     await this.ensureGatewayModeLocal();
-    return this.runOpenClawStreaming(["gateway", "start"], onLog);
+    const result = await this.runOpenClawStreaming(["gateway", "start"], onLog);
+    if (result.ok) {
+      // Wait for the gateway port to become ready before returning,
+      // since the process needs 15-30s to initialize after starting.
+      onLog("Waiting for gateway port to be ready...", "stdout");
+      await this.waitForGatewayPortReady(60_000);
+      onLog("Gateway port is ready.", "stdout");
+    }
+    return result;
+  }
+
+  /**
+   * Waits for the gateway's WebSocket port to be ready with exponential backoff retries.
+   * Retries for up to the specified timeout duration.
+   */
+  private async waitForGatewayPortReady(timeoutMs: number): Promise<void> {
+    const startTime = Date.now();
+    const maxDelay = 5000;
+    let delay = 500;
+    let attempt = 0;
+
+    while (Date.now() - startTime < timeoutMs) {
+      attempt++;
+      if (await this.isGatewayPortReady()) {
+        console.info(
+          `[waitForGatewayPortReady] Port ready after attempt ${attempt}, ${Date.now() - startTime}ms`,
+        );
+        return;
+      }
+      const elapsed = Date.now() - startTime;
+      console.info(
+        `[waitForGatewayPortReady] Attempt ${attempt} failed, retrying in ${delay}ms (elapsed: ${elapsed}ms)`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 1.5, maxDelay);
+    }
+
+    console.warn(
+      `[waitForGatewayPortReady] Timeout after ${timeoutMs}ms, port may not be ready yet`,
+    );
   }
 
   /**
@@ -437,10 +659,10 @@ export class EnvironmentService {
    */
   private async ensureGatewayModeLocal(): Promise<void> {
     const script = [
-      this.buildWslNodeBootstrapCommand(),
-      "CONFIG=\"$HOME/.openclaw/openclaw.json\"",
-      "if [ ! -f \"$CONFIG\" ]; then exit 0; fi",
-      "node -e \"" +
+      process.platform === "win32" ? this.buildWslNodeBootstrapCommand() : "",
+      'CONFIG="$HOME/.openclaw/openclaw.json"',
+      'if [ ! -f "$CONFIG" ]; then exit 0; fi',
+      'node -e "' +
         "const fs=require('fs');" +
         "const p=process.argv[1];" +
         "try{const c=JSON.parse(fs.readFileSync(p,'utf8'));" +
@@ -449,19 +671,61 @@ export class EnvironmentService {
         "c.gateway.mode='local';" +
         "fs.writeFileSync(p,JSON.stringify(c,null,2)+'\\n');" +
         "console.log('Set gateway.mode=local')}" +
-        "catch(e){console.error(e.message)}\" \"$CONFIG\""
-    ].join("; ");
+        'catch(e){console.error(e.message)}" "$CONFIG"',
+    ]
+      .filter(Boolean)
+      .join("; ");
 
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+      if (
+        wslStatus.wslInstalled &&
+        wslStatus.distroInstalled &&
+        wslStatus.distroReachable
+      ) {
         const cliUser = await this.resolveWslBrewUser(wslStatus.distro);
-        await this.runWslBash(wslStatus.distro, script, 15_000, cliUser || undefined);
+        await this.runWslBash(
+          wslStatus.distro,
+          script,
+          15_000,
+          cliUser || undefined,
+        );
         return;
       }
     }
 
     await runCommand("bash", ["-c", script], { env: this.buildCommandEnv() });
+  }
+
+  private async ensureGatewayServiceInstalledOnDarwin(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<void> {
+    if (process.platform !== "darwin") {
+      return;
+    }
+
+    const status = await this.runOpenClaw(["gateway", "status"]);
+    const statusBlob = `${status.stdout}\n${status.stderr}`.toLowerCase();
+    const needsInstall =
+      !status.ok ||
+      /service not loaded|service not installed|service unit not found|launchagent \(not loaded\)|could not find service/.test(
+        statusBlob,
+      );
+
+    if (!needsInstall) {
+      return;
+    }
+
+    onLog?.("Gateway service not installed; installing on macOS...", "stdout");
+    const install = onLog
+      ? await this.runOpenClawStreaming(["gateway", "install"], onLog)
+      : await this.runOpenClaw(["gateway", "install"]);
+    if (!install.ok) {
+      const detail = [install.stderr, install.stdout]
+        .filter((value): value is string => Boolean(value && value.trim()))
+        .join("\n");
+      throw new Error(detail || "Failed to install gateway service on macOS.");
+    }
   }
 
   public gatewayStop(): Promise<CommandResult> {
@@ -473,28 +737,35 @@ export class EnvironmentService {
     const telegram = await this.readChannelStatus("telegram");
     return {
       checkedAt: new Date().toISOString(),
-      channels: [whatsapp, telegram]
+      channels: [whatsapp, telegram],
     };
   }
 
-  public async reconnectChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
-    const args = channel === "whatsapp"
-      ? ["channels", "login", "--channel", "whatsapp"]
-      : ["channels", "login", "--channel", "telegram"];
+  public async reconnectChannel(
+    channel: ManagedChannel,
+  ): Promise<ChannelStatusItem> {
+    const args =
+      channel === "whatsapp"
+        ? ["channels", "login", "--channel", "whatsapp"]
+        : ["channels", "login", "--channel", "telegram"];
 
     const result = await this.runOpenClaw(args);
     if (!result.ok) {
-      throw new Error(result.stderr || result.stdout || `Failed to reconnect ${channel}.`);
+      throw new Error(
+        result.stderr || result.stdout || `Failed to reconnect ${channel}.`,
+      );
     }
 
     return this.readChannelStatus(channel);
   }
 
-  public async disableChannel(channel: ManagedChannel): Promise<ChannelStatusItem> {
+  public async disableChannel(
+    channel: ManagedChannel,
+  ): Promise<ChannelStatusItem> {
     const commandArgs = [
       ["channels", "logout", "--channel", channel],
       ["channels", "remove", "--channel", channel, "--delete"],
-      ["channels", "remove", "--channel", channel]
+      ["channels", "remove", "--channel", channel],
     ];
 
     let lastError = "";
@@ -517,7 +788,14 @@ export class EnvironmentService {
 
     const commandArgs = [
       ["channels", "add", "--channel", "telegram", "--token", normalizedToken],
-      ["channels", "login", "--channel", "telegram", "--token", normalizedToken]
+      [
+        "channels",
+        "login",
+        "--channel",
+        "telegram",
+        "--token",
+        normalizedToken,
+      ],
     ];
 
     let lastError = "";
@@ -533,9 +811,16 @@ export class EnvironmentService {
   }
 
   public async getModelStatus(): Promise<ModelStatusResult> {
-    const result = await this.runOpenClaw(["models", "list", "--all", "--json"]);
+    const result = await this.runOpenClawStreaming(
+      ["models", "list", "--all", "--json"],
+      () => {
+        // Intentionally ignored; this call captures output only.
+      },
+    );
     if (!result.ok) {
-      throw new Error(result.stderr || result.stdout || "Unable to load model status.");
+      throw new Error(
+        result.stderr || result.stdout || "Unable to load model status.",
+      );
     }
 
     const payload = this.parseJsonOutput(result.stdout, result.stderr);
@@ -547,11 +832,14 @@ export class EnvironmentService {
       availableProviders: inferred.availableProviders,
       modelsByProvider: inferred.modelsByProvider,
       modelDisplayNames: inferred.modelDisplayNames,
-      detail: inferred.detail
+      detail: inferred.detail,
     };
   }
 
-  public async saveModelApiKey(provider: string, apiKey: string): Promise<CommandResult> {
+  public async saveModelApiKey(
+    provider: string,
+    apiKey: string,
+  ): Promise<CommandResult> {
     const normalizedProvider = provider.trim();
     const normalizedKey = apiKey.trim();
 
@@ -568,19 +856,23 @@ export class EnvironmentService {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
     const providerAliases = Array.from(
-      new Set([normalizedProvider, canonicalProvider].filter((value) => value.length > 0))
+      new Set(
+        [normalizedProvider, canonicalProvider].filter(
+          (value) => value.length > 0,
+        ),
+      ),
     );
     const jsonPayload = JSON.stringify({
       providers: providerAliases,
-      key: normalizedKey
+      key: normalizedKey,
     });
 
     const quotedPayload = this.quoteForBash(jsonPayload);
     const resolveAndWrite = [
       this.buildManagedWslPathBootstrapCommand(),
       // Resolve status payload once; includes auth store metadata in newer CLI versions.
-      "export STATUS_JSON=\"$(openclaw models status --json 2>/dev/null)\"",
-      "if [ -z \"$STATUS_JSON\" ]; then echo \"Could not resolve model status payload.\" >&2; exit 1; fi",
+      'export STATUS_JSON="$(openclaw models status --json 2>/dev/null)"',
+      'if [ -z "$STATUS_JSON" ]; then echo "Could not resolve model status payload." >&2; exit 1; fi',
       // Read existing file(s) or start with empty array, then upsert profile aliases.
       // This writes to the discovered auth store, plus conservative fallback paths
       // for agent-scoped and legacy/global stores.
@@ -678,22 +970,36 @@ export class EnvironmentService {
           console.log('Saved auth profiles in: ' + storePath);
         }
         console.log('Provider aliases: ' + providers.join(', ') + '; upserts: ' + totalUpserts);
-      "`
+      "`,
     ].join("; ");
 
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+      if (
+        wslStatus.wslInstalled &&
+        wslStatus.distroInstalled &&
+        wslStatus.distroReachable
+      ) {
         const cliUser = await this.resolveWslBrewUser(wslStatus.distro);
-        return this.runWslBash(wslStatus.distro, resolveAndWrite, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
+        return this.runWslBash(
+          wslStatus.distro,
+          resolveAndWrite,
+          OPENCLAW_INSTALL_TIMEOUT_MS,
+          cliUser || undefined,
+        );
       }
     }
 
     // Non-WSL fallback
-    return runCommand("bash", ["-c", resolveAndWrite], { env: this.buildCommandEnv() });
+    return runCommand("bash", ["-c", resolveAndWrite], {
+      env: this.buildCommandEnv(),
+    });
   }
 
-  public async applyModelSelection(provider: string, model: string): Promise<ModelStatusResult> {
+  public async applyModelSelection(
+    provider: string,
+    model: string,
+  ): Promise<ModelStatusResult> {
     const normalizedModel = model.trim();
 
     if (!normalizedModel) {
@@ -702,14 +1008,12 @@ export class EnvironmentService {
 
     // CLI expects: openclaw models set <model-key>
     // The model key already includes the provider (e.g. "anthropic/claude-opus-4-6")
-    const result = await this.runOpenClaw([
-      "models",
-      "set",
-      normalizedModel
-    ]);
+    const result = await this.runOpenClaw(["models", "set", normalizedModel]);
 
     if (!result.ok) {
-      throw new Error(result.stderr || result.stdout || "Unable to apply model selection.");
+      throw new Error(
+        result.stderr || result.stdout || "Unable to apply model selection.",
+      );
     }
 
     return this.getModelStatus();
@@ -721,7 +1025,8 @@ export class EnvironmentService {
         supported: false,
         enabled: false,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: "Always-on gateway uses Windows Task Scheduler and is only available on Windows."
+        detail:
+          "Always-on gateway uses Windows Task Scheduler and is only available on Windows.",
       };
     }
     const systemdStatus = await this.getSystemdAlwaysOnStatus();
@@ -732,7 +1037,7 @@ export class EnvironmentService {
         supported: true,
         enabled: true,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: "Enabled via WSL systemd user service."
+        detail: "Enabled via WSL systemd user service.",
       };
     }
 
@@ -745,14 +1050,16 @@ export class EnvironmentService {
         supported: true,
         enabled: false,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: `Disabled. ${systemdStatus.detail}`
+        detail: `Disabled. ${systemdStatus.detail}`,
       };
     }
 
     return scheduledTaskStatus;
   }
 
-  public async setAlwaysOnGatewayEnabled(enabled: boolean): Promise<AlwaysOnGatewayStatus> {
+  public async setAlwaysOnGatewayEnabled(
+    enabled: boolean,
+  ): Promise<AlwaysOnGatewayStatus> {
     if (process.platform !== "win32") {
       throw new Error("Always-on gateway is supported only on Windows.");
     }
@@ -777,25 +1084,27 @@ export class EnvironmentService {
     }
 
     const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
-    return /(reboot|restart|reiniciar|red[eé]marr|neu\s*start|riavvia|перезагруз|再起動|重启)/i.test(output);
+    return /(reboot|restart|reiniciar|red[eé]marr|neu\s*start|riavvia|перезагруз|再起動|重启)/i.test(
+      output,
+    );
   }
 
   private async installNodeRuntimeInternal(
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     if (process.platform !== "win32") {
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "WSL setup is only available on Windows."
+        stderr: "WSL setup is only available on Windows.",
       };
     }
 
     const diskCheck = await this.ensureMinimumFreeSpace(
       process.env.SystemDrive ? `${process.env.SystemDrive}\\` : "C:\\",
       WSL_MIN_FREE_BYTES,
-      onLog
+      onLog,
     );
     if (diskCheck) {
       return diskCheck;
@@ -806,12 +1115,16 @@ export class EnvironmentService {
     let lastResult: CommandResult | null = null;
 
     if (wslStatus.accessDenied) {
-      onLog?.("WSL distro access is denied in this Windows session (E_ACCESSDENIED).", "stderr");
+      onLog?.(
+        "WSL distro access is denied in this Windows session (E_ACCESSDENIED).",
+        "stderr",
+      );
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Wsl/EnumerateDistros/Service/E_ACCESSDENIED: Windows blocked WSL distro access for this session. Run OpenClaw Desktop in your normal user session, verify `wsl -l -v` works, then retry setup."
+        stderr:
+          "Wsl/EnumerateDistros/Service/E_ACCESSDENIED: Windows blocked WSL distro access for this session. Run OpenClaw Desktop in your normal user session, verify `wsl -l -v` works, then retry setup.",
       };
     }
 
@@ -820,15 +1133,23 @@ export class EnvironmentService {
       const wslInstall = await this.installWslWithPowerShell(distro, onLog);
       lastResult = wslInstall;
       if (!wslInstall.ok) {
-        const detail = [wslInstall.stderr, wslInstall.stdout].filter(Boolean).join("\n").trim();
+        const detail = [wslInstall.stderr, wslInstall.stdout]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
         return {
           ...wslInstall,
-          stderr: `${detail}\n${this.detectWslInstallFailureHint(detail)}`.trim()
+          stderr:
+            `${detail}\n${this.detectWslInstallFailureHint(detail)}`.trim(),
         };
       }
 
       const postWslStatus = await this.getWslStatus();
-      if (!postWslStatus.wslInstalled || !postWslStatus.distroInstalled || !postWslStatus.distroReachable) {
+      if (
+        !postWslStatus.wslInstalled ||
+        !postWslStatus.distroInstalled ||
+        !postWslStatus.distroReachable
+      ) {
         const requiresRestart = this.rebootRequired(wslInstall);
         return {
           ok: false,
@@ -836,15 +1157,18 @@ export class EnvironmentService {
           stdout: wslInstall.stdout,
           stderr: requiresRestart
             ? "WSL installation requested a restart. Restart Windows, open OpenClaw Desktop, and continue setup."
-            : `WSL install finished but ${distro} is still unavailable. Retry setup after restarting Windows.`
+            : `WSL install finished but ${distro} is still unavailable. Retry setup after restarting Windows.`,
         };
       }
     } else if (!wslStatus.distroReachable) {
-      onLog?.(`WSL distro ${distro} is installed but not reachable. Restarting WSL service...`, "stderr");
+      onLog?.(
+        `WSL distro ${distro} is installed but not reachable. Restarting WSL service...`,
+        "stderr",
+      );
       await runCommand("wsl.exe", ["--shutdown"], {
         okExitCodes: [0, 1],
         timeoutMs: 20_000,
-        env: this.buildCommandEnv()
+        env: this.buildCommandEnv(),
       });
       const retryStatus = await this.getWslStatus();
       if (!retryStatus.distroReachable) {
@@ -852,20 +1176,26 @@ export class EnvironmentService {
           ok: false,
           code: null,
           stdout: "",
-          stderr: `WSL distro ${distro} is registered but cannot be launched. Reinstall/repair WSL and retry setup.`
+          stderr: `WSL distro ${distro} is registered but cannot be launched. Reinstall/repair WSL and retry setup.`,
         };
       }
     }
 
     const wslUserConfigured = await this.isWslUserConfigured(distro);
     if (!wslUserConfigured) {
-      onLog?.("Ubuntu account setup is required (username/password).", "stderr");
-      onLog?.("Open Ubuntu setup, finish account creation, then click Resume Setup.", "stderr");
+      onLog?.(
+        "Ubuntu account setup is required (username/password).",
+        "stderr",
+      );
+      onLog?.(
+        "Open Ubuntu setup, finish account creation, then click Resume Setup.",
+        "stderr",
+      );
       return {
         ok: false,
         code: 1001,
         stdout: "",
-        stderr: `${WSL_USER_SETUP_REQUIRED_MARKER}: Ubuntu account setup is required. Open Ubuntu and finish username/password first.`
+        stderr: `${WSL_USER_SETUP_REQUIRED_MARKER}: Ubuntu account setup is required. Open Ubuntu and finish username/password first.`,
       };
     }
 
@@ -874,17 +1204,27 @@ export class EnvironmentService {
       if (runtime.nodeVersion && !runtime.nodeInstalled) {
         onLog?.(
           `Detected Node.js ${runtime.nodeVersion} in WSL, but OpenClaw requires Node.js ${MIN_OPENCLAW_WSL_NODE_MAJOR}+. Upgrading Node.js...`,
-          "stdout"
+          "stdout",
         );
       }
-      onLog?.(`Installing runtime dependencies in WSL distro ${distro}...`, "stdout");
-      const runtimeInstall = await this.installWslRuntimeDependencies(distro, onLog);
+      onLog?.(
+        `Installing runtime dependencies in WSL distro ${distro}...`,
+        "stdout",
+      );
+      const runtimeInstall = await this.installWslRuntimeDependencies(
+        distro,
+        onLog,
+      );
       lastResult = runtimeInstall;
       if (!runtimeInstall.ok) {
-        const detail = [runtimeInstall.stderr, runtimeInstall.stdout].filter(Boolean).join("\n").trim();
+        const detail = [runtimeInstall.stderr, runtimeInstall.stdout]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
         return {
           ...runtimeInstall,
-          stderr: `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim()
+          stderr:
+            `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim(),
         };
       }
     }
@@ -898,7 +1238,7 @@ export class EnvironmentService {
         ok: false,
         code: lastResult?.code ?? null,
         stdout: lastResult?.stdout ?? "",
-        stderr: `WSL runtime install finished but Node.js >=${MIN_OPENCLAW_WSL_NODE_MAJOR} and npm are still unavailable.${versionHint} Open Ubuntu once, then retry setup.`
+        stderr: `WSL runtime install finished but Node.js >=${MIN_OPENCLAW_WSL_NODE_MAJOR} and npm are still unavailable.${versionHint} Open Ubuntu once, then retry setup.`,
       };
     }
 
@@ -907,30 +1247,51 @@ export class EnvironmentService {
       const brewLog = async (msg: string) => {
         const logDir = path.join(os.homedir(), ".openclaw-desktop");
         await mkdir(logDir, { recursive: true }).catch(() => {});
-        await appendFile(path.join(logDir, "brew-install.log"), `[${new Date().toISOString()}] ${msg}\n`).catch(() => {});
+        await appendFile(
+          path.join(logDir, "brew-install.log"),
+          `[${new Date().toISOString()}] ${msg}\n`,
+        ).catch(() => {});
       };
 
       await brewLog("=== Homebrew install started ===");
-      onLog?.(`Ensuring Homebrew system dependencies in WSL distro ${distro}...`, "stdout");
-      const brewDepsInstall = await this.installWslBrewDependencies(distro, onLog);
-      await brewLog(`brewDepsInstall ok=${brewDepsInstall.ok} code=${brewDepsInstall.code}\nstdout: ${brewDepsInstall.stdout}\nstderr: ${brewDepsInstall.stderr}`);
+      onLog?.(
+        `Ensuring Homebrew system dependencies in WSL distro ${distro}...`,
+        "stdout",
+      );
+      const brewDepsInstall = await this.installWslBrewDependencies(
+        distro,
+        onLog,
+      );
+      await brewLog(
+        `brewDepsInstall ok=${brewDepsInstall.ok} code=${brewDepsInstall.code}\nstdout: ${brewDepsInstall.stdout}\nstderr: ${brewDepsInstall.stderr}`,
+      );
       if (!brewDepsInstall.ok) {
-        const detail = [brewDepsInstall.stderr, brewDepsInstall.stdout].filter(Boolean).join("\n").trim();
+        const detail = [brewDepsInstall.stderr, brewDepsInstall.stdout]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
         return {
           ...brewDepsInstall,
-          stderr: `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim()
+          stderr:
+            `${detail}\n${this.detectRuntimeInstallFailureHint(detail)}`.trim(),
         };
       }
 
       onLog?.(`Installing Homebrew in WSL distro ${distro}...`, "stdout");
       const brewInstall = await this.installWslBrew(distro, onLog);
-      await brewLog(`brewInstall ok=${brewInstall.ok} code=${brewInstall.code}\nstdout: ${brewInstall.stdout}\nstderr: ${brewInstall.stderr}`);
+      await brewLog(
+        `brewInstall ok=${brewInstall.ok} code=${brewInstall.code}\nstdout: ${brewInstall.stdout}\nstderr: ${brewInstall.stderr}`,
+      );
       lastResult = brewInstall;
       if (!brewInstall.ok) {
-        const detail = [brewInstall.stderr, brewInstall.stdout].filter(Boolean).join("\n").trim();
+        const detail = [brewInstall.stderr, brewInstall.stdout]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
         return {
           ...brewInstall,
-          stderr: `${detail}\n${this.detectBrewInstallFailureHint(detail)}`.trim()
+          stderr:
+            `${detail}\n${this.detectBrewInstallFailureHint(detail)}`.trim(),
         };
       }
     }
@@ -941,38 +1302,87 @@ export class EnvironmentService {
         ok: false,
         code: lastResult?.code ?? null,
         stdout: lastResult?.stdout ?? "",
-        stderr: "Runtime install finished but Homebrew is still unavailable in WSL. Open Ubuntu once and retry setup."
+        stderr:
+          "Runtime install finished but Homebrew is still unavailable in WSL. Open Ubuntu once and retry setup.",
       };
     }
 
-    onLog?.(`WSL runtime is ready in distro ${distro} (Node, npm, Homebrew).`, "stdout");
-    return lastResult ?? {
-      ok: true,
-      code: 0,
-      stdout: `WSL runtime already installed in distro ${distro} (Node, npm, Homebrew).`,
-      stderr: ""
-    };
+    onLog?.(
+      `WSL runtime is ready in distro ${distro} (Node, npm, Homebrew).`,
+      "stdout",
+    );
+    return (
+      lastResult ?? {
+        ok: true,
+        code: 0,
+        stdout: `WSL runtime already installed in distro ${distro} (Node, npm, Homebrew).`,
+        stderr: "",
+      }
+    );
   }
 
   private async installOpenClawInternal(
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     if (process.platform !== "win32") {
-      return {
-        ok: false,
-        code: null,
-        stdout: "",
-        stderr: "OpenClaw setup is only available on Windows."
-      };
+      const nodeInstalled = await this.isLocalCommandAvailable(
+        this.resolveNodeCommand(),
+        ["--version"],
+      );
+      const npmInstalled = await this.isLocalCommandAvailable(
+        this.resolveNpmCommand(),
+        ["--version"],
+      );
+
+      if (!nodeInstalled || !npmInstalled) {
+        return {
+          ok: false,
+          code: null,
+          stdout: "",
+          stderr:
+            "Node.js and npm are required to install OpenClaw. Install runtime dependencies first.",
+        };
+      }
+
+      onLog?.("Installing OpenClaw locally...", "stdout");
+      const result = await this.installOpenClawLocally(onLog);
+      if (!result.ok) {
+        const detail = [result.stderr, result.stdout]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+        return {
+          ...result,
+          stderr:
+            `${detail}\n${this.detectOpenClawInstallFailureHint(detail)}`.trim(),
+        };
+      }
+
+      const openclawInstalled = await this.isOpenClawAvailable(undefined, true);
+      if (!openclawInstalled) {
+        return {
+          ok: false,
+          code: result.code,
+          stdout: result.stdout,
+          stderr:
+            `${result.stderr}\nOpenClaw install finished but executable was not detected in PATH.`.trim(),
+        };
+      }
+
+      return result;
     }
 
     const wslStatus = await this.getWslStatus();
-    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+    if (
+      !wslStatus.wslInstalled ||
+      !wslStatus.distroInstalled ||
+      !wslStatus.distroReachable
+    ) {
       return {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "WSL is not ready. Install/repair WSL first."
+        stderr: "WSL is not ready. Install/repair WSL first.",
       };
     }
 
@@ -983,7 +1393,8 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Ubuntu account setup is incomplete. Open Ubuntu and finish username/password setup first."
+        stderr:
+          "Ubuntu account setup is incomplete. Open Ubuntu and finish username/password setup first.",
       };
     }
 
@@ -996,7 +1407,7 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: `${detail}Runtime dependencies are missing in WSL. Install WSL runtime first.`
+        stderr: `${detail}Runtime dependencies are missing in WSL. Install WSL runtime first.`,
       };
     }
 
@@ -1006,14 +1417,14 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Homebrew is missing in WSL. Install WSL runtime first."
+        stderr: "Homebrew is missing in WSL. Install WSL runtime first.",
       };
     }
 
     const diskCheck = await this.ensureMinimumFreeSpace(
       process.env.SystemDrive ? `${process.env.SystemDrive}\\` : "C:\\",
       OPENCLAW_MIN_FREE_BYTES,
-      onLog
+      onLog,
     );
     if (diskCheck) {
       return diskCheck;
@@ -1022,30 +1433,48 @@ export class EnvironmentService {
     onLog?.(`Installing OpenClaw in WSL distro ${distro}...`, "stdout");
     const installUser = await this.resolveWslBrewUser(distro);
     if (installUser) {
-      onLog?.(`Using Ubuntu user ${installUser} for OpenClaw install.`, "stdout");
+      onLog?.(
+        `Using Ubuntu user ${installUser} for OpenClaw install.`,
+        "stdout",
+      );
     }
 
     const installScript = [
       "set -e",
       this.buildWslNodeBootstrapCommand(),
-      "echo \"WSL user: $(id -un)\"",
-      "if command -v node >/dev/null 2>&1; then echo \"node: $(node --version)\"; elif command -v nodejs >/dev/null 2>&1; then echo \"nodejs: $(nodejs --version)\"; else echo \"node: missing\"; fi",
-      "if command -v npm >/dev/null 2>&1; then echo \"npm: $(npm --version)\"; else echo \"npm: missing\"; fi",
-      "mkdir -p \"$HOME/.openclaw-desktop/npm\"",
-      "npm install -g openclaw --prefix \"$HOME/.openclaw-desktop/npm\" --no-fund --no-audit",
-      "if [ ! -x \"$HOME/.openclaw-desktop/npm/bin/openclaw\" ]; then echo \"openclaw binary missing after npm install\" >&2; exit 1; fi",
-      "\"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version"
+      'echo "WSL user: $(id -un)"',
+      'if command -v node >/dev/null 2>&1; then echo "node: $(node --version)"; elif command -v nodejs >/dev/null 2>&1; then echo "nodejs: $(nodejs --version)"; else echo "node: missing"; fi',
+      'if command -v npm >/dev/null 2>&1; then echo "npm: $(npm --version)"; else echo "npm: missing"; fi',
+      'mkdir -p "$HOME/.openclaw-desktop/npm"',
+      'npm install -g openclaw --prefix "$HOME/.openclaw-desktop/npm" --no-fund --no-audit',
+      'if [ ! -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then echo "openclaw binary missing after npm install" >&2; exit 1; fi',
+      '"$HOME/.openclaw-desktop/npm/bin/openclaw" --version',
     ].join(" && ");
 
     const result = onLog
-      ? await this.runWslBashStreaming(distro, installScript, onLog, OPENCLAW_INSTALL_TIMEOUT_MS, installUser || undefined)
-      : await this.runWslBash(distro, installScript, OPENCLAW_INSTALL_TIMEOUT_MS, installUser || undefined);
+      ? await this.runWslBashStreaming(
+          distro,
+          installScript,
+          onLog,
+          OPENCLAW_INSTALL_TIMEOUT_MS,
+          installUser || undefined,
+        )
+      : await this.runWslBash(
+          distro,
+          installScript,
+          OPENCLAW_INSTALL_TIMEOUT_MS,
+          installUser || undefined,
+        );
 
     if (!result.ok) {
-      const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+      const detail = [result.stderr, result.stdout]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
       return {
         ...result,
-        stderr: `${detail}\n${this.detectOpenClawInstallFailureHint(detail)}`.trim()
+        stderr:
+          `${detail}\n${this.detectOpenClawInstallFailureHint(detail)}`.trim(),
       };
     }
 
@@ -1055,7 +1484,8 @@ export class EnvironmentService {
         ok: false,
         code: result.code,
         stdout: result.stdout,
-        stderr: `${result.stderr}\nOpenClaw install finished but executable was not detected in WSL PATH.`.trim()
+        stderr:
+          `${result.stderr}\nOpenClaw install finished but executable was not detected in WSL PATH.`.trim(),
       };
     }
 
@@ -1064,7 +1494,11 @@ export class EnvironmentService {
 
   private detectOpenClawInstallFailureHint(output: string): string {
     const blob = output.toLowerCase();
-    if (/eai_again|enotfound|timed out|timeout|could not resolve|failed to connect|network/.test(blob)) {
+    if (
+      /eai_again|enotfound|timed out|timeout|could not resolve|failed to connect|network/.test(
+        blob,
+      )
+    ) {
       return "OpenClaw npm install in WSL failed due to network/registry access issues.";
     }
     if (/unsupported engine|notsup|requires node|ebadengine/.test(blob)) {
@@ -1079,9 +1513,38 @@ export class EnvironmentService {
     return "OpenClaw npm install in WSL failed. Check npm output and WSL health, then retry.";
   }
 
+  private installOpenClawLocally(
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
+  ): Promise<CommandResult> {
+    const npmCommand = this.resolveNpmCommand();
+    const args = [
+      "install",
+      "-g",
+      "openclaw",
+      "--prefix",
+      this.getManagedNpmPrefix(),
+      "--no-fund",
+      "--no-audit",
+    ];
+
+    if (!onLog) {
+      return runCommand(npmCommand, args, {
+        env: this.buildCommandEnv(),
+        timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
+      });
+    }
+
+    return runCommandStreaming(npmCommand, args, {
+      env: this.buildCommandEnv(),
+      timeoutMs: OPENCLAW_INSTALL_TIMEOUT_MS,
+      onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
+      onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog),
+    });
+  }
+
   private async installWslWithPowerShell(
     distro: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const quotedDistro = this.quoteForSingleQuotedPowerShell(distro);
     const script = [
@@ -1089,15 +1552,19 @@ export class EnvironmentService {
       `Write-Output ('Installing WSL distro ' + ${quotedDistro} + ' (UAC prompt may appear)...')`,
       `$process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('--install','-d',${quotedDistro},'--no-launch') -Verb RunAs -PassThru -Wait`,
       "Write-Output ('wsl.exe exit code: ' + $process.ExitCode)",
-      "exit $process.ExitCode"
+      "exit $process.ExitCode",
     ].join("; ");
 
     if (!onLog) {
-      return runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
-        okExitCodes: WSL_INSTALL_OK_EXIT_CODES,
-        timeoutMs: WSL_INSTALL_TIMEOUT_MS,
-        env: this.buildCommandEnv()
-      });
+      return runCommand(
+        "powershell.exe",
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        {
+          okExitCodes: WSL_INSTALL_OK_EXIT_CODES,
+          timeoutMs: WSL_INSTALL_TIMEOUT_MS,
+          env: this.buildCommandEnv(),
+        },
+      );
     }
 
     return runCommandStreaming(
@@ -1108,14 +1575,14 @@ export class EnvironmentService {
         timeoutMs: WSL_INSTALL_TIMEOUT_MS,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
-      }
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog),
+      },
     );
   }
 
   private async installWslRuntimeDependencies(
     distro: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const script = [
       "set -e",
@@ -1131,10 +1598,16 @@ export class EnvironmentService {
       "apt-get update",
       "apt-get install -y nodejs",
       "if ! command -v npm >/dev/null 2>&1; then apt-get install -y npm; fi",
-      "if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then ln -sf \"$(command -v nodejs)\" /usr/local/bin/node || true; fi"
+      'if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then ln -sf "$(command -v nodejs)" /usr/local/bin/node || true; fi',
     ].join(" && ");
     return onLog
-      ? this.runWslBashStreaming(distro, script, onLog, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root")
+      ? this.runWslBashStreaming(
+          distro,
+          script,
+          onLog,
+          WSL_RUNTIME_INSTALL_TIMEOUT_MS,
+          "root",
+        )
       : this.runWslBash(distro, script, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root");
   }
 
@@ -1160,10 +1633,18 @@ export class EnvironmentService {
 
   private detectRuntimeInstallFailureHint(output: string): string {
     const blob = output.toLowerCase();
-    if (/temporary failure resolving|could not resolve|network|timed out|timeout/.test(blob)) {
+    if (
+      /temporary failure resolving|could not resolve|network|timed out|timeout/.test(
+        blob,
+      )
+    ) {
       return "Network issue detected while installing runtime packages in WSL.";
     }
-    if (/nodesource|deb\.nodesource\.com|keyring|gpg: no valid openpgp data found/.test(blob)) {
+    if (
+      /nodesource|deb\.nodesource\.com|keyring|gpg: no valid openpgp data found/.test(
+        blob,
+      )
+    ) {
       return "Node.js repository bootstrap failed in WSL. Check outbound HTTPS access to deb.nodesource.com and retry.";
     }
     if (/dpkg was interrupted|apt --fix-broken/.test(blob)) {
@@ -1174,10 +1655,14 @@ export class EnvironmentService {
 
   private detectBrewInstallFailureHint(output: string): string {
     const blob = output.toLowerCase();
-    if (/network|timed out|timeout|could not resolve|failed to connect/.test(blob)) {
+    if (
+      /network|timed out|timeout|could not resolve|failed to connect/.test(blob)
+    ) {
       return "Network issue detected while installing Homebrew in WSL.";
     }
-    if (/sudo|permission denied|operation not permitted|not writable/.test(blob)) {
+    if (
+      /sudo|permission denied|operation not permitted|not writable/.test(blob)
+    ) {
       return "Homebrew installer was blocked by permissions. Automatic ownership repair was attempted; click Install Homebrew to retry.";
     }
     return "Homebrew install in WSL failed. Retry Install Homebrew and check WSL logs for details if it keeps failing.";
@@ -1187,26 +1672,52 @@ export class EnvironmentService {
     const preferredDistro = this.getPreferredWslDistro();
 
     if (process.platform !== "win32") {
-      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: false,
+        accessDenied: false,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
     const list = await runCommand("wsl.exe", ["-l", "-q"], {
       okExitCodes: [1],
       timeoutMs: 20_000,
-      env: this.buildCommandEnv()
+      env: this.buildCommandEnv(),
     });
 
-    const merged = this.normalizeWslOutput(`${list.stdout}\n${list.stderr}`).toLowerCase();
+    const merged = this.normalizeWslOutput(
+      `${list.stdout}\n${list.stderr}`,
+    ).toLowerCase();
     if (this.isWslCommandMissingOutput(merged)) {
-      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: false,
+        accessDenied: false,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
     if (this.isWslFeatureDisabledOutput(merged)) {
-      return { wslInstalled: false, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: false,
+        accessDenied: false,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
     if (this.isWslAccessDeniedOutput(merged)) {
-      return { wslInstalled: true, accessDenied: true, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: true,
+        accessDenied: true,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
     const distributions = list.stdout
@@ -1215,32 +1726,63 @@ export class EnvironmentService {
       .filter(Boolean);
 
     if (distributions.length === 0 && this.isNoInstalledDistrosOutput(merged)) {
-      return { wslInstalled: true, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: true,
+        accessDenied: false,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
-    const resolvedDistro = this.resolveInstalledDistro(preferredDistro, distributions);
+    const resolvedDistro = this.resolveInstalledDistro(
+      preferredDistro,
+      distributions,
+    );
     if (!resolvedDistro) {
-      return { wslInstalled: true, accessDenied: false, distroInstalled: false, distroReachable: false, distro: preferredDistro };
+      return {
+        wslInstalled: true,
+        accessDenied: false,
+        distroInstalled: false,
+        distroReachable: false,
+        distro: preferredDistro,
+      };
     }
 
     const distroReachable = await this.canLaunchWslDistroAsRoot(resolvedDistro);
-    return { wslInstalled: true, accessDenied: false, distroInstalled: true, distroReachable, distro: resolvedDistro };
+    return {
+      wslInstalled: true,
+      accessDenied: false,
+      distroInstalled: true,
+      distroReachable,
+      distro: resolvedDistro,
+    };
   }
 
-  private resolveInstalledDistro(preferredDistro: string, installedDistros: string[]): string | null {
+  private resolveInstalledDistro(
+    preferredDistro: string,
+    installedDistros: string[],
+  ): string | null {
     const preferred = preferredDistro.trim();
-    const exact = installedDistros.find((value) => value.toLowerCase() === preferred.toLowerCase());
+    const exact = installedDistros.find(
+      (value) => value.toLowerCase() === preferred.toLowerCase(),
+    );
     if (exact) {
       return exact;
     }
 
     // Accept Ubuntu variants when preferred distro is Ubuntu (e.g. Ubuntu-22.04, Ubuntu-24.04).
     if (this.isUbuntuFamilyDistro(preferred)) {
-      const ubuntuCandidates = installedDistros.filter((value) => this.isUbuntuFamilyDistro(value));
+      const ubuntuCandidates = installedDistros.filter((value) =>
+        this.isUbuntuFamilyDistro(value),
+      );
       if (ubuntuCandidates.length === 0) {
         return null;
       }
-      return ubuntuCandidates.find((value) => value.toLowerCase() === "ubuntu") || ubuntuCandidates[0];
+      return (
+        ubuntuCandidates.find((value) => value.toLowerCase() === "ubuntu") ||
+        ubuntuCandidates[0]
+      );
     }
 
     return null;
@@ -1255,7 +1797,9 @@ export class EnvironmentService {
   }
 
   private isWslFeatureDisabledOutput(blob: string): boolean {
-    return /optional component.*not enabled|windows subsystem for linux has not been enabled|virtual machine platform.*not enabled|enable.*virtual machine platform/.test(blob);
+    return /optional component.*not enabled|windows subsystem for linux has not been enabled|virtual machine platform.*not enabled|enable.*virtual machine platform/.test(
+      blob,
+    );
   }
 
   private isNoInstalledDistrosOutput(blob: string): boolean {
@@ -1274,11 +1818,20 @@ export class EnvironmentService {
     const readinessMarker = "__OPENCLAW_WSL_READY__";
     const probe = await runCommand(
       "wsl.exe",
-      ["-d", distro, "-u", "root", "--", "/bin/sh", "-lc", `printf '${readinessMarker}'`],
+      [
+        "-d",
+        distro,
+        "-u",
+        "root",
+        "--",
+        "/bin/sh",
+        "-lc",
+        `printf '${readinessMarker}'`,
+      ],
       {
         timeoutMs: 20_000,
-        env: this.buildCommandEnv()
-      }
+        env: this.buildCommandEnv(),
+      },
     );
 
     if (probe.ok) {
@@ -1292,7 +1845,10 @@ export class EnvironmentService {
   }
 
   private getPreferredWslDistro(): string {
-    return (process.env.OPENCLAW_WSL_DISTRO || DEFAULT_WSL_DISTRO).trim() || DEFAULT_WSL_DISTRO;
+    return (
+      (process.env.OPENCLAW_WSL_DISTRO || DEFAULT_WSL_DISTRO).trim() ||
+      DEFAULT_WSL_DISTRO
+    );
   }
 
   private async isWslUserConfigured(distro: string): Promise<boolean> {
@@ -1301,30 +1857,36 @@ export class EnvironmentService {
       distro,
       "if getent passwd 1000 >/dev/null 2>&1; then exit 0; fi; if ls -1 /home 2>/dev/null | grep -v '^root$' | grep -q .; then exit 0; fi; exit 1",
       15_000,
-      "root"
+      "root",
     );
     return check.ok;
   }
 
   private async installWslBrewDependencies(
     distro: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const script = [
       "set -e",
       "export DEBIAN_FRONTEND=noninteractive",
       "if ! dpkg --configure -a; then apt-get -f install -y; dpkg --configure -a; fi",
       "apt-get update",
-      "apt-get install -y ca-certificates curl gnupg file git build-essential procps"
+      "apt-get install -y ca-certificates curl gnupg file git build-essential procps",
     ].join(" && ");
     return onLog
-      ? this.runWslBashStreaming(distro, script, onLog, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root")
+      ? this.runWslBashStreaming(
+          distro,
+          script,
+          onLog,
+          WSL_RUNTIME_INSTALL_TIMEOUT_MS,
+          "root",
+        )
       : this.runWslBash(distro, script, WSL_RUNTIME_INSTALL_TIMEOUT_MS, "root");
   }
 
   private async installWslBrew(
     distro: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const brewUser = await this.resolveWslBrewUser(distro);
     if (!brewUser) {
@@ -1332,17 +1894,29 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Unable to determine the non-root Ubuntu user for Homebrew installation. Finish Ubuntu user setup and retry."
+        stderr:
+          "Unable to determine the non-root Ubuntu user for Homebrew installation. Finish Ubuntu user setup and retry.",
       };
     }
 
-    onLog?.(`Preparing Linuxbrew directory permissions for user ${brewUser}...`, "stdout");
-    const prepResult = await this.prepareLinuxbrewPermissions(distro, brewUser, onLog);
+    onLog?.(
+      `Preparing Linuxbrew directory permissions for user ${brewUser}...`,
+      "stdout",
+    );
+    const prepResult = await this.prepareLinuxbrewPermissions(
+      distro,
+      brewUser,
+      onLog,
+    );
     if (!prepResult.ok) {
-      const detail = [prepResult.stderr, prepResult.stdout].filter(Boolean).join("\n").trim();
+      const detail = [prepResult.stderr, prepResult.stdout]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
       return {
         ...prepResult,
-        stderr: `${detail}\nFailed to prepare Linuxbrew directory permissions in WSL.`.trim()
+        stderr:
+          `${detail}\nFailed to prepare Linuxbrew directory permissions in WSL.`.trim(),
       };
     }
 
@@ -1350,19 +1924,30 @@ export class EnvironmentService {
       "set -e",
       "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
       `if [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; exit 0; fi`,
-      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
+      'if [ -x "$HOME/.linuxbrew/bin/brew" ]; then "$HOME/.linuxbrew/bin/brew" --version; exit 0; fi',
       "export NONINTERACTIVE=1",
       "export CI=1",
       "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash",
       "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
       `if [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; exit 0; fi`,
-      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
-      "exit 1"
+      'if [ -x "$HOME/.linuxbrew/bin/brew" ]; then "$HOME/.linuxbrew/bin/brew" --version; exit 0; fi',
+      "exit 1",
     ].join(" && ");
 
     const install = onLog
-      ? await this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser)
-      : await this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser);
+      ? await this.runWslBashStreaming(
+          distro,
+          script,
+          onLog,
+          WSL_BREW_INSTALL_TIMEOUT_MS,
+          brewUser,
+        )
+      : await this.runWslBash(
+          distro,
+          script,
+          WSL_BREW_INSTALL_TIMEOUT_MS,
+          brewUser,
+        );
 
     if (install.ok) {
       return install;
@@ -1373,29 +1958,67 @@ export class EnvironmentService {
       return install;
     }
 
-    onLog?.("Homebrew installer reported permission issues. Retrying after Linuxbrew ownership repair...", "stderr");
-    const repairResult = await this.prepareLinuxbrewPermissions(distro, brewUser, onLog);
+    onLog?.(
+      "Homebrew installer reported permission issues. Retrying after Linuxbrew ownership repair...",
+      "stderr",
+    );
+    const repairResult = await this.prepareLinuxbrewPermissions(
+      distro,
+      brewUser,
+      onLog,
+    );
     if (!repairResult.ok) {
-      const repairDetail = [repairResult.stderr, repairResult.stdout].filter(Boolean).join("\n").trim();
+      const repairDetail = [repairResult.stderr, repairResult.stdout]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
       return {
         ...install,
-        stderr: `${install.stderr}\nAutomatic Linuxbrew ownership repair failed:\n${repairDetail}`.trim()
+        stderr:
+          `${install.stderr}\nAutomatic Linuxbrew ownership repair failed:\n${repairDetail}`.trim(),
       };
     }
 
     const retry = onLog
-      ? await this.runWslBashStreaming(distro, script, onLog, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser)
-      : await this.runWslBash(distro, script, WSL_BREW_INSTALL_TIMEOUT_MS, brewUser);
+      ? await this.runWslBashStreaming(
+          distro,
+          script,
+          onLog,
+          WSL_BREW_INSTALL_TIMEOUT_MS,
+          brewUser,
+        )
+      : await this.runWslBash(
+          distro,
+          script,
+          WSL_BREW_INSTALL_TIMEOUT_MS,
+          brewUser,
+        );
 
-    if (retry.ok || !this.isBrewPermissionFailureOutput(`${retry.stdout}\n${retry.stderr}`)) {
+    if (
+      retry.ok ||
+      !this.isBrewPermissionFailureOutput(`${retry.stdout}\n${retry.stderr}`)
+    ) {
       return retry;
     }
 
-    onLog?.("System Linuxbrew prefix is still blocked. Falling back to user prefix (~/.linuxbrew)...", "stderr");
-    const userPrefixPrep = await this.prepareUserPrefixBrewPermissions(distro, brewUser, onLog);
+    onLog?.(
+      "System Linuxbrew prefix is still blocked. Falling back to user prefix (~/.linuxbrew)...",
+      "stderr",
+    );
+    const userPrefixPrep = await this.prepareUserPrefixBrewPermissions(
+      distro,
+      brewUser,
+      onLog,
+    );
     if (!userPrefixPrep.ok) {
-      const prepDetail = [userPrefixPrep.stderr, userPrefixPrep.stdout].filter(Boolean).join("\n").trim();
-      onLog?.(`User-prefix ownership repair failed before fallback install:\n${prepDetail}`, "stderr");
+      const prepDetail = [userPrefixPrep.stderr, userPrefixPrep.stdout]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      onLog?.(
+        `User-prefix ownership repair failed before fallback install:\n${prepDetail}`,
+        "stderr",
+      );
     }
     return onLog
       ? this.installWslBrewInUserPrefixStreaming(distro, brewUser, onLog)
@@ -1403,10 +2026,19 @@ export class EnvironmentService {
   }
 
   private async resolveWslBrewUser(distro: string): Promise<string | null> {
-    const currentUserResult = await this.runWslBash(distro, "id -un 2>/dev/null || true", 15_000);
+    const currentUserResult = await this.runWslBash(
+      distro,
+      "id -un 2>/dev/null || true",
+      15_000,
+    );
     if (currentUserResult.ok) {
       const currentUser = this.normalizeWslUserName(
-        currentUserResult.stdout.trim().split(/\r?\n/).filter(Boolean).pop()?.trim() || ""
+        currentUserResult.stdout
+          .trim()
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .pop()
+          ?.trim() || "",
       );
       if (currentUser) {
         return currentUser;
@@ -1418,19 +2050,23 @@ export class EnvironmentService {
       distro,
       [
         "set -e",
-        "candidate=\"$(getent passwd 1000 | cut -d: -f1)\"",
-        "if [ -z \"$candidate\" ]; then candidate=\"$(ls -1 /home 2>/dev/null | grep -v '^root$' | head -n1)\"; fi",
-        `if [ -n \"$candidate\" ] && [ \"$candidate\" != \"root\" ]; then printf '${marker}%s${marker}' \"$candidate\"; else exit 1; fi`
+        'candidate="$(getent passwd 1000 | cut -d: -f1)"',
+        'if [ -z "$candidate" ]; then candidate="$(ls -1 /home 2>/dev/null | grep -v \'^root$\' | head -n1)"; fi',
+        `if [ -n \"$candidate\" ] && [ \"$candidate\" != \"root\" ]; then printf '${marker}%s${marker}' \"$candidate\"; else exit 1; fi`,
       ].join(" && "),
       15_000,
-      "root"
+      "root",
     );
     if (!fallbackResult.ok) {
       return null;
     }
 
-    const fallbackBlob = this.normalizeWslOutput(`${fallbackResult.stdout}\n${fallbackResult.stderr}`);
-    const match = fallbackBlob.match(/__OPENCLAW_BREW_USER__(.+?)__OPENCLAW_BREW_USER__/);
+    const fallbackBlob = this.normalizeWslOutput(
+      `${fallbackResult.stdout}\n${fallbackResult.stderr}`,
+    );
+    const match = fallbackBlob.match(
+      /__OPENCLAW_BREW_USER__(.+?)__OPENCLAW_BREW_USER__/,
+    );
     const fallbackUser = this.normalizeWslUserName(match?.[1] || "");
     if (!fallbackUser) {
       return null;
@@ -1441,7 +2077,7 @@ export class EnvironmentService {
   private async prepareLinuxbrewPermissions(
     distro: string,
     user: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const normalizedUser = this.normalizeWslUserName(user);
     if (!normalizedUser) {
@@ -1449,7 +2085,8 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Unable to resolve the Ubuntu username for Linuxbrew ownership repair."
+        stderr:
+          "Unable to resolve the Ubuntu username for Linuxbrew ownership repair.",
       };
     }
 
@@ -1461,8 +2098,8 @@ export class EnvironmentService {
       "if [ -L /home/linuxbrew ]; then rm -f /home/linuxbrew; fi",
       "if [ -e /home/linuxbrew ] && [ ! -d /home/linuxbrew ]; then rm -f /home/linuxbrew; fi",
       `mkdir -p ${LINUXBREW_SYSTEM_PREFIX}`,
-      "chown -R \"$target_uid:$target_gid\" /home/linuxbrew",
-      "chmod -R u+rwx /home/linuxbrew"
+      'chown -R "$target_uid:$target_gid" /home/linuxbrew',
+      "chmod -R u+rwx /home/linuxbrew",
     ].join(" && ");
 
     return onLog
@@ -1473,7 +2110,7 @@ export class EnvironmentService {
   private async prepareUserPrefixBrewPermissions(
     distro: string,
     user: string,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const normalizedUser = this.normalizeWslUserName(user);
     if (!normalizedUser) {
@@ -1481,7 +2118,8 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: "Unable to resolve the Ubuntu username for user-prefix Homebrew ownership repair."
+        stderr:
+          "Unable to resolve the Ubuntu username for user-prefix Homebrew ownership repair.",
       };
     }
 
@@ -1493,9 +2131,9 @@ export class EnvironmentService {
       `target_gid=\"$(id -g ${quotedUser})\"`,
       `target_home=\"$(getent passwd ${quotedUser} | cut -d: -f6)\"`,
       `if [ -z \"$target_home\" ]; then target_home=${fallbackHome}; fi`,
-      "mkdir -p \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\"",
-      "chown -R \"$target_uid:$target_gid\" \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\"",
-      "chmod -R u+rwx \"$target_home/.linuxbrew\" \"$target_home/.cache/Homebrew\""
+      'mkdir -p "$target_home/.linuxbrew" "$target_home/.cache/Homebrew"',
+      'chown -R "$target_uid:$target_gid" "$target_home/.linuxbrew" "$target_home/.cache/Homebrew"',
+      'chmod -R u+rwx "$target_home/.linuxbrew" "$target_home/.cache/Homebrew"',
     ].join(" && ");
 
     return onLog
@@ -1505,25 +2143,47 @@ export class EnvironmentService {
 
   private isBrewPermissionFailureOutput(output: string): boolean {
     const blob = output.toLowerCase();
-    return /permission denied|operation not permitted|not writable|writable by your user|cannot create|can't create|failed during: .*mkdir|need sudo|change the ownership|sudo chown/.test(blob);
+    return /permission denied|operation not permitted|not writable|writable by your user|cannot create|can't create|failed during: .*mkdir|need sudo|change the ownership|sudo chown/.test(
+      blob,
+    );
   }
 
-  private async getNodeRuntimeStatus(distro: string): Promise<NodeRuntimeStatus> {
+  private async getNodeRuntimeStatus(
+    distro: string,
+  ): Promise<NodeRuntimeStatus> {
     const cliUser = await this.resolveWslBrewUser(distro);
     const runtimeBootstrap = this.buildWslNodeBootstrapCommand();
-    const nodeCheck = await this.runWslBash(distro, `${runtimeBootstrap}; node --version`, 20_000, cliUser || undefined);
+    const nodeCheck = await this.runWslBash(
+      distro,
+      `${runtimeBootstrap}; node --version`,
+      20_000,
+      cliUser || undefined,
+    );
     const nodejsCheck = nodeCheck.ok
       ? nodeCheck
-      : await this.runWslBash(distro, `${runtimeBootstrap}; nodejs --version`, 20_000, cliUser || undefined);
-    const npmCheck = await this.runWslBash(distro, `${runtimeBootstrap}; npm --version`, 20_000, cliUser || undefined);
+      : await this.runWslBash(
+          distro,
+          `${runtimeBootstrap}; nodejs --version`,
+          20_000,
+          cliUser || undefined,
+        );
+    const npmCheck = await this.runWslBash(
+      distro,
+      `${runtimeBootstrap}; npm --version`,
+      20_000,
+      cliUser || undefined,
+    );
 
-    const nodeVersion = nodejsCheck.ok ? this.extractCommandLastLine(nodejsCheck.stdout) : null;
+    const nodeVersion = nodejsCheck.ok
+      ? this.extractCommandLastLine(nodejsCheck.stdout)
+      : null;
     const nodeMajor = nodeVersion ? this.parseNodeMajor(nodeVersion) : null;
 
     return {
-      nodeInstalled: nodeMajor !== null && nodeMajor >= MIN_OPENCLAW_WSL_NODE_MAJOR,
+      nodeInstalled:
+        nodeMajor !== null && nodeMajor >= MIN_OPENCLAW_WSL_NODE_MAJOR,
       npmInstalled: npmCheck.ok,
-      nodeVersion
+      nodeVersion,
     };
   }
 
@@ -1556,7 +2216,12 @@ export class EnvironmentService {
 
     const currentUserResult = await this.runWslBash(distro, "id -un", 15_000);
     const currentUser = currentUserResult.ok
-      ? currentUserResult.stdout.trim().split(/\r?\n/).filter(Boolean).pop()?.trim() || ""
+      ? currentUserResult.stdout
+          .trim()
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .pop()
+          ?.trim() || ""
       : "";
     if (currentUser && currentUser === brewUser) {
       return false;
@@ -1565,40 +2230,71 @@ export class EnvironmentService {
     return this.isBrewAvailable(distro, brewUser);
   }
 
-  private async isBrewAvailable(distro: string, user?: string): Promise<boolean> {
+  private async isBrewAvailable(
+    distro: string,
+    user?: string,
+  ): Promise<boolean> {
     const check = await this.runWslBash(
       distro,
       `if command -v brew >/dev/null 2>&1; then brew --version; elif [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then ${LINUXBREW_SYSTEM_PREFIX}/bin/brew --version; elif [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; else exit 1; fi`,
       20_000,
-      user
+      user,
     );
     return check.ok;
   }
 
-  private async readChannelStatus(channel: ManagedChannel): Promise<ChannelStatusItem> {
-    const jsonResult = await this.runOpenClaw(["channels", "status", "--channel", channel, "--json"]);
+  private async readChannelStatus(
+    channel: ManagedChannel,
+  ): Promise<ChannelStatusItem> {
+    const jsonResult = await this.runOpenClaw([
+      "channels",
+      "status",
+      "--channel",
+      channel,
+      "--json",
+    ]);
 
     if (jsonResult.ok) {
       try {
-        const payload = this.parseJsonOutput(jsonResult.stdout, jsonResult.stderr);
-        return inferChannelStatusFromPayload(channel, payload, jsonResult.stdout);
+        const payload = this.parseJsonOutput(
+          jsonResult.stdout,
+          jsonResult.stderr,
+        );
+        return inferChannelStatusFromPayload(
+          channel,
+          payload,
+          jsonResult.stdout,
+        );
       } catch {
-        return inferChannelStatusFromPayload(channel, jsonResult.stdout, jsonResult.stdout);
+        return inferChannelStatusFromPayload(
+          channel,
+          jsonResult.stdout,
+          jsonResult.stdout,
+        );
       }
     }
 
-    const fallback = await this.runOpenClaw(["channels", "status", "--channel", channel]);
-    const fallbackText = fallback.ok ? fallback.stdout : `${fallback.stdout}\n${fallback.stderr}`;
+    const fallback = await this.runOpenClaw([
+      "channels",
+      "status",
+      "--channel",
+      channel,
+    ]);
+    const fallbackText = fallback.ok
+      ? fallback.stdout
+      : `${fallback.stdout}\n${fallback.stderr}`;
     return inferChannelStatusFromPayload(channel, fallbackText, fallbackText);
   }
 
   private getAlwaysOnTaskAction(): string {
-    const distro = this.quoteForSingleQuotedPowerShell(this.getPreferredWslDistro());
+    const distro = this.quoteForSingleQuotedPowerShell(
+      this.getPreferredWslDistro(),
+    );
     const script = [
       "$ErrorActionPreference = 'SilentlyContinue'",
       `$distro = ${distro}`,
       `$cmd = '${this.buildManagedWslPathBootstrapCommand()}; openclaw gateway start >/dev/null 2>&1'`,
-      "wsl.exe -d $distro -- bash -lc $cmd"
+      "wsl.exe -d $distro -- bash -lc $cmd",
     ].join("; ");
     const escapedScript = script.replace(/"/g, '\\"');
     return `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "${escapedScript}"`;
@@ -1608,7 +2304,7 @@ export class EnvironmentService {
     const query = await runCommand(
       "schtasks.exe",
       ["/Query", "/TN", ALWAYS_ON_TASK_NAME, "/FO", "LIST", "/V"],
-      { okExitCodes: [1] }
+      { okExitCodes: [1] },
     );
 
     if (query.code === 1 && isScheduledTaskMissing(query)) {
@@ -1616,7 +2312,7 @@ export class EnvironmentService {
         supported: true,
         enabled: false,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: "Disabled. Gateway will not auto-start at Windows sign-in."
+        detail: "Disabled. Gateway will not auto-start at Windows sign-in.",
       };
     }
 
@@ -1625,7 +2321,7 @@ export class EnvironmentService {
         supported: true,
         enabled: false,
         taskName: ALWAYS_ON_TASK_NAME,
-        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`
+        detail: `Unable to read task status: ${query.stderr || query.stdout || "Unknown error"}`,
       };
     }
 
@@ -1635,7 +2331,7 @@ export class EnvironmentService {
       supported: true,
       enabled: true,
       taskName: ALWAYS_ON_TASK_NAME,
-      detail: `Enabled via Windows Task Scheduler. State: ${statusLabel}.`
+      detail: `Enabled via Windows Task Scheduler. State: ${statusLabel}.`,
     };
   }
 
@@ -1650,11 +2346,15 @@ export class EnvironmentService {
       "LIMITED",
       "/F",
       "/TR",
-      this.getAlwaysOnTaskAction()
+      this.getAlwaysOnTaskAction(),
     ]);
 
     if (!createResult.ok) {
-      throw new Error(createResult.stderr || createResult.stdout || "Failed to create always-on gateway task.");
+      throw new Error(
+        createResult.stderr ||
+          createResult.stdout ||
+          "Failed to create always-on gateway task.",
+      );
     }
   }
 
@@ -1662,7 +2362,7 @@ export class EnvironmentService {
     const deleteResult = await runCommand(
       "schtasks.exe",
       ["/Delete", "/TN", ALWAYS_ON_TASK_NAME, "/F"],
-      { okExitCodes: [1] }
+      { okExitCodes: [1] },
     );
 
     if (deleteResult.code === 1 && isScheduledTaskMissing(deleteResult)) {
@@ -1670,34 +2370,58 @@ export class EnvironmentService {
     }
 
     if (deleteResult.code !== 0 || !deleteResult.ok) {
-      throw new Error(deleteResult.stderr || deleteResult.stdout || "Failed to delete always-on gateway task.");
+      throw new Error(
+        deleteResult.stderr ||
+          deleteResult.stdout ||
+          "Failed to delete always-on gateway task.",
+      );
     }
   }
 
-  private async getSystemdAlwaysOnStatus(): Promise<{ supported: boolean; enabled: boolean; detail: string }> {
+  private async getSystemdAlwaysOnStatus(): Promise<{
+    supported: boolean;
+    enabled: boolean;
+    detail: string;
+  }> {
     if (process.platform !== "win32") {
       return { supported: false, enabled: false, detail: "Not on Windows." };
     }
 
     const wslStatus = await this.getWslStatus();
-    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
-      return { supported: false, enabled: false, detail: "WSL distro is not ready." };
+    if (
+      !wslStatus.wslInstalled ||
+      !wslStatus.distroInstalled ||
+      !wslStatus.distroReachable
+    ) {
+      return {
+        supported: false,
+        enabled: false,
+        detail: "WSL distro is not ready.",
+      };
     }
 
     const distro = wslStatus.distro;
     const cliUser = await this.resolveWslBrewUser(distro);
     if (!cliUser) {
-      return { supported: false, enabled: false, detail: "No non-root WSL user configured yet." };
+      return {
+        supported: false,
+        enabled: false,
+        detail: "No non-root WSL user configured yet.",
+      };
     }
 
     const systemdCheck = await this.runWslBash(
       distro,
-      "if [ \"$(ps -p 1 -o comm= | tr -d '[:space:]')\" = \"systemd\" ] && command -v systemctl >/dev/null 2>&1; then echo ok; else echo unavailable; fi",
+      'if [ "$(ps -p 1 -o comm= | tr -d \'[:space:]\')" = "systemd" ] && command -v systemctl >/dev/null 2>&1; then echo ok; else echo unavailable; fi',
       20_000,
-      cliUser
+      cliUser,
     );
     if (!systemdCheck.ok || !/\bok\b/i.test(systemdCheck.stdout)) {
-      return { supported: false, enabled: false, detail: "WSL systemd is not available." };
+      return {
+        supported: false,
+        enabled: false,
+        detail: "WSL systemd is not available.",
+      };
     }
 
     const statusResult = await this.runWslBash(
@@ -1705,14 +2429,18 @@ export class EnvironmentService {
       [
         `enabled_state="$(systemctl --user is-enabled ${ALWAYS_ON_SYSTEMD_USER_SERVICE} 2>&1 || true)"`,
         `active_state="$(systemctl --user is-active ${ALWAYS_ON_SYSTEMD_USER_SERVICE} 2>&1 || true)"`,
-        "echo \"enabled:$enabled_state\"",
-        "echo \"active:$active_state\""
+        'echo "enabled:$enabled_state"',
+        'echo "active:$active_state"',
       ].join("; "),
       20_000,
-      cliUser
+      cliUser,
     );
     if (!statusResult.ok) {
-      return { supported: true, enabled: false, detail: "Could not read systemd user service status." };
+      return {
+        supported: true,
+        enabled: false,
+        detail: "Could not read systemd user service status.",
+      };
     }
 
     const raw = `${statusResult.stdout}\n${statusResult.stderr}`.toLowerCase();
@@ -1724,9 +2452,16 @@ export class EnvironmentService {
     return { supported: true, enabled, detail };
   }
 
-  private async enableSystemdAlwaysOn(): Promise<{ ok: boolean; detail: string }> {
+  private async enableSystemdAlwaysOn(): Promise<{
+    ok: boolean;
+    detail: string;
+  }> {
     const wslStatus = await this.getWslStatus();
-    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+    if (
+      !wslStatus.wslInstalled ||
+      !wslStatus.distroInstalled ||
+      !wslStatus.distroReachable
+    ) {
       return { ok: false, detail: "WSL distro is not ready." };
     }
 
@@ -1746,7 +2481,7 @@ export class EnvironmentService {
       distro,
       `if command -v loginctl >/dev/null 2>&1; then loginctl enable-linger ${this.quoteForBash(cliUser)} >/dev/null 2>&1 || true; fi`,
       20_000,
-      "root"
+      "root",
     ).catch(() => {});
 
     const unitContent = [
@@ -1761,7 +2496,7 @@ export class EnvironmentService {
       `ExecStop=/bin/bash -lc '${this.buildManagedWslPathBootstrapCommand()}; openclaw gateway stop'`,
       "",
       "[Install]",
-      "WantedBy=default.target"
+      "WantedBy=default.target",
     ].join("\n");
     const encodedUnit = Buffer.from(unitContent, "utf8").toString("base64");
 
@@ -1769,16 +2504,22 @@ export class EnvironmentService {
       distro,
       [
         "set -e",
-        "mkdir -p \"$HOME/.config/systemd/user\"",
+        'mkdir -p "$HOME/.config/systemd/user"',
         `echo ${encodedUnit} | base64 -d > "$HOME/.config/systemd/user/${ALWAYS_ON_SYSTEMD_USER_SERVICE}"`,
         "systemctl --user daemon-reload",
-        `systemctl --user enable --now ${ALWAYS_ON_SYSTEMD_USER_SERVICE}`
+        `systemctl --user enable --now ${ALWAYS_ON_SYSTEMD_USER_SERVICE}`,
       ].join("; "),
       45_000,
-      cliUser
+      cliUser,
     );
     if (!configureResult.ok) {
-      return { ok: false, detail: configureResult.stderr || configureResult.stdout || "Unknown systemd failure." };
+      return {
+        ok: false,
+        detail:
+          configureResult.stderr ||
+          configureResult.stdout ||
+          "Unknown systemd failure.",
+      };
     }
 
     await this.disableScheduledTaskAlwaysOn().catch(() => {});
@@ -1787,7 +2528,11 @@ export class EnvironmentService {
 
   private async disableSystemdAlwaysOn(): Promise<void> {
     const wslStatus = await this.getWslStatus();
-    if (!wslStatus.wslInstalled || !wslStatus.distroInstalled || !wslStatus.distroReachable) {
+    if (
+      !wslStatus.wslInstalled ||
+      !wslStatus.distroInstalled ||
+      !wslStatus.distroReachable
+    ) {
       return;
     }
 
@@ -1806,10 +2551,10 @@ export class EnvironmentService {
       distro,
       [
         `systemctl --user disable --now ${ALWAYS_ON_SYSTEMD_USER_SERVICE} >/dev/null 2>&1 || true`,
-        "systemctl --user daemon-reload >/dev/null 2>&1 || true"
+        "systemctl --user daemon-reload >/dev/null 2>&1 || true",
       ].join("; "),
       30_000,
-      cliUser
+      cliUser,
     ).catch(() => {});
   }
 
@@ -1820,7 +2565,11 @@ export class EnvironmentService {
   private async runOpenClaw(args: string[]): Promise<CommandResult> {
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+      if (
+        wslStatus.wslInstalled &&
+        wslStatus.distroInstalled &&
+        wslStatus.distroReachable
+      ) {
         return this.runOpenClawInWsl(wslStatus.distro, args);
       }
     }
@@ -1831,11 +2580,15 @@ export class EnvironmentService {
 
   private async runOpenClawStreaming(
     args: string[],
-    onLog: (line: string, stream: "stdout" | "stderr") => void
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     if (process.platform === "win32") {
       const wslStatus = await this.getWslStatus();
-      if (wslStatus.wslInstalled && wslStatus.distroInstalled && wslStatus.distroReachable) {
+      if (
+        wslStatus.wslInstalled &&
+        wslStatus.distroInstalled &&
+        wslStatus.distroReachable
+      ) {
         return this.runOpenClawInWslStreaming(wslStatus.distro, args, onLog);
       }
     }
@@ -1844,11 +2597,14 @@ export class EnvironmentService {
     return runCommandStreaming(command, args, {
       env: this.buildCommandEnv(),
       onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-      onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+      onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog),
     });
   }
 
-  private async isOpenClawAvailable(distro?: string, clearCache = false): Promise<boolean> {
+  private async isOpenClawAvailable(
+    distro?: string,
+    clearCache = false,
+  ): Promise<boolean> {
     if (clearCache) {
       this.resolvedOpenClawCommand = "";
     }
@@ -1874,31 +2630,45 @@ export class EnvironmentService {
     }
   }
 
-  private async runOpenClawInWsl(distro: string, args: string[]): Promise<CommandResult> {
+  private async runOpenClawInWsl(
+    distro: string,
+    args: string[],
+  ): Promise<CommandResult> {
     const command = this.buildWslOpenClawCommand(args);
     const cliUser = await this.resolveWslBrewUser(distro);
-    return this.runWslBash(distro, command, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
+    return this.runWslBash(
+      distro,
+      command,
+      OPENCLAW_INSTALL_TIMEOUT_MS,
+      cliUser || undefined,
+    );
   }
 
   private async runOpenClawInWslStreaming(
     distro: string,
     args: string[],
-    onLog: (line: string, stream: "stdout" | "stderr") => void
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
     const command = this.buildWslOpenClawCommand(args);
     const cliUser = await this.resolveWslBrewUser(distro);
-    return this.runWslBashStreaming(distro, command, onLog, OPENCLAW_INSTALL_TIMEOUT_MS, cliUser || undefined);
+    return this.runWslBashStreaming(
+      distro,
+      command,
+      onLog,
+      OPENCLAW_INSTALL_TIMEOUT_MS,
+      cliUser || undefined,
+    );
   }
 
   private buildWslOpenClawCommand(args: string[]): string {
     const quotedArgs = args.map((arg) => this.quoteForBash(arg)).join(" ");
     const managedInvoke = quotedArgs
       ? `"$HOME/.openclaw-desktop/npm/bin/openclaw" ${quotedArgs}`
-      : "\"$HOME/.openclaw-desktop/npm/bin/openclaw\"";
+      : '"$HOME/.openclaw-desktop/npm/bin/openclaw"';
     const pathInvoke = quotedArgs ? `openclaw ${quotedArgs}` : "openclaw";
     return [
       this.buildManagedWslPathBootstrapCommand(),
-      `if [ -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then ${managedInvoke}; elif command -v openclaw >/dev/null 2>&1; then ${pathInvoke}; else echo "openclaw CLI not found in WSL." >&2; exit 127; fi`
+      `if [ -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then ${managedInvoke}; elif command -v openclaw >/dev/null 2>&1; then ${pathInvoke}; else echo "openclaw CLI not found in WSL." >&2; exit 127; fi`,
     ].join("; ");
   }
 
@@ -1906,65 +2676,78 @@ export class EnvironmentService {
     return [
       this.buildBrewShellenvBootstrapCommand(),
       this.buildWslNodeBootstrapCommand(),
-      "export PATH=\"$HOME/.openclaw-desktop/npm/bin:$PATH\""
+      'export PATH="$HOME/.openclaw-desktop/npm/bin:$PATH"',
     ].join("; ");
   }
 
   private buildWslNodeBootstrapCommand(): string {
     // Prefer the distro-managed Node.js install over user shell shims such as nvm/asdf.
-    return "export PATH=\"/usr/bin:/usr/local/bin:/bin:$PATH\"";
+    return 'export PATH="/usr/bin:/usr/local/bin:/bin:$PATH"';
   }
 
   private buildBrewShellenvBootstrapCommand(): string {
     return [
       "if command -v brew >/dev/null 2>&1; then :",
       `elif [ -x ${LINUXBREW_SYSTEM_PREFIX}/bin/brew ]; then export HOMEBREW_PREFIX=${LINUXBREW_SYSTEM_PREFIX}; export HOMEBREW_REPOSITORY=${LINUXBREW_SYSTEM_PREFIX}/Homebrew; export HOMEBREW_CELLAR=${LINUXBREW_SYSTEM_PREFIX}/Cellar; export PATH=${LINUXBREW_SYSTEM_PREFIX}/bin:${LINUXBREW_SYSTEM_PREFIX}/sbin:\"$PATH\"; export MANPATH=${LINUXBREW_SYSTEM_PREFIX}/share/man:\"\${MANPATH:-}\"; export INFOPATH=${LINUXBREW_SYSTEM_PREFIX}/share/info:\"\${INFOPATH:-}\"`,
-      "elif [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then export HOMEBREW_PREFIX=\"$HOME/.linuxbrew\"; export HOMEBREW_REPOSITORY=\"$HOMEBREW_PREFIX/Homebrew\"; export HOMEBREW_CELLAR=\"$HOMEBREW_PREFIX/Cellar\"; export PATH=\"$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH\"; export MANPATH=\"$HOMEBREW_PREFIX/share/man:${MANPATH:-}\"; export INFOPATH=\"$HOMEBREW_PREFIX/share/info:${INFOPATH:-}\"",
-      "fi"
+      'elif [ -x "$HOME/.linuxbrew/bin/brew" ]; then export HOMEBREW_PREFIX="$HOME/.linuxbrew"; export HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"; export HOMEBREW_CELLAR="$HOMEBREW_PREFIX/Cellar"; export PATH="$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH"; export MANPATH="$HOMEBREW_PREFIX/share/man:${MANPATH:-}"; export INFOPATH="$HOMEBREW_PREFIX/share/info:${INFOPATH:-}"',
+      "fi",
     ].join("; ");
   }
 
   private installWslBrewInUserPrefix(
     distro: string,
-    user: string
+    user: string,
   ): Promise<CommandResult> {
-    return this.runWslBash(distro, this.buildUserPrefixBrewInstallScript(), WSL_BREW_INSTALL_TIMEOUT_MS, user);
+    return this.runWslBash(
+      distro,
+      this.buildUserPrefixBrewInstallScript(),
+      WSL_BREW_INSTALL_TIMEOUT_MS,
+      user,
+    );
   }
 
   private installWslBrewInUserPrefixStreaming(
     distro: string,
     user: string,
-    onLog: (line: string, stream: "stdout" | "stderr") => void
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult> {
-    return this.runWslBashStreaming(distro, this.buildUserPrefixBrewInstallScript(), onLog, WSL_BREW_INSTALL_TIMEOUT_MS, user);
+    return this.runWslBashStreaming(
+      distro,
+      this.buildUserPrefixBrewInstallScript(),
+      onLog,
+      WSL_BREW_INSTALL_TIMEOUT_MS,
+      user,
+    );
   }
 
   private buildUserPrefixBrewInstallScript(): string {
     return [
       "set -e",
-      "if [ -z \"${HOME:-}\" ]; then HOME=\"$(getent passwd \"$(id -u)\" | cut -d: -f6)\"; fi",
-      "if [ -z \"${HOME:-}\" ]; then HOME=\"/home/$(id -un)\"; fi",
+      'if [ -z "${HOME:-}" ]; then HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"; fi',
+      'if [ -z "${HOME:-}" ]; then HOME="/home/$(id -un)"; fi',
       "if command -v brew >/dev/null 2>&1; then brew --version; exit 0; fi",
-      "if [ -x \"$HOME/.linuxbrew/bin/brew\" ]; then \"$HOME/.linuxbrew/bin/brew\" --version; exit 0; fi",
+      'if [ -x "$HOME/.linuxbrew/bin/brew" ]; then "$HOME/.linuxbrew/bin/brew" --version; exit 0; fi',
       "export NONINTERACTIVE=1",
       "export CI=1",
-      "export HOMEBREW_PREFIX=\"$HOME/.linuxbrew\"",
-      "export HOMEBREW_REPOSITORY=\"$HOMEBREW_PREFIX/Homebrew\"",
-      "export HOMEBREW_CELLAR=\"$HOMEBREW_PREFIX/Cellar\"",
-      "export HOMEBREW_CACHE=\"$HOME/.cache/Homebrew\"",
-      "mkdir -p \"$HOMEBREW_PREFIX\" \"$HOMEBREW_CACHE\"",
-      "if [ ! -d \"$HOMEBREW_REPOSITORY/.git\" ]; then git clone --depth=1 https://github.com/Homebrew/brew \"$HOMEBREW_REPOSITORY\"; fi",
-      "mkdir -p \"$HOMEBREW_PREFIX/bin\" \"$HOMEBREW_PREFIX/sbin\"",
-      "ln -sf ../Homebrew/bin/brew \"$HOMEBREW_PREFIX/bin/brew\"",
-      "export PATH=\"$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH\"",
-      "export MANPATH=\"$HOMEBREW_PREFIX/share/man:${MANPATH:-}\"",
-      "export INFOPATH=\"$HOMEBREW_PREFIX/share/info:${INFOPATH:-}\"",
-      "\"$HOMEBREW_PREFIX/bin/brew\" --version"
+      'export HOMEBREW_PREFIX="$HOME/.linuxbrew"',
+      'export HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"',
+      'export HOMEBREW_CELLAR="$HOMEBREW_PREFIX/Cellar"',
+      'export HOMEBREW_CACHE="$HOME/.cache/Homebrew"',
+      'mkdir -p "$HOMEBREW_PREFIX" "$HOMEBREW_CACHE"',
+      'if [ ! -d "$HOMEBREW_REPOSITORY/.git" ]; then git clone --depth=1 https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"; fi',
+      'mkdir -p "$HOMEBREW_PREFIX/bin" "$HOMEBREW_PREFIX/sbin"',
+      'ln -sf ../Homebrew/bin/brew "$HOMEBREW_PREFIX/bin/brew"',
+      'export PATH="$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:$PATH"',
+      'export MANPATH="$HOMEBREW_PREFIX/share/man:${MANPATH:-}"',
+      'export INFOPATH="$HOMEBREW_PREFIX/share/info:${INFOPATH:-}"',
+      '"$HOMEBREW_PREFIX/bin/brew" --version',
     ].join(" && ");
   }
 
   private normalizeWslUserName(value: string): string {
-    const normalized = this.normalizeWslOutput(value).trim().replace(/^['"]+|['"]+$/g, "");
+    const normalized = this.normalizeWslOutput(value)
+      .trim()
+      .replace(/^['"]+|['"]+$/g, "");
     if (!normalized) {
       return "";
     }
@@ -1980,9 +2763,11 @@ export class EnvironmentService {
     return normalized;
   }
 
-  private async isManagedOpenClawAvailableInWsl(distro: string): Promise<boolean> {
+  private async isManagedOpenClawAvailableInWsl(
+    distro: string,
+  ): Promise<boolean> {
     const checkScript =
-      "if [ -x \"$HOME/.openclaw-desktop/npm/bin/openclaw\" ]; then \"$HOME/.openclaw-desktop/npm/bin/openclaw\" --version >/dev/null 2>&1; else exit 1; fi";
+      'if [ -x "$HOME/.openclaw-desktop/npm/bin/openclaw" ]; then "$HOME/.openclaw-desktop/npm/bin/openclaw" --version >/dev/null 2>&1; else exit 1; fi';
 
     const defaultUserCheck = await this.runWslBash(distro, checkScript, 20_000);
     if (defaultUserCheck.ok) {
@@ -1994,7 +2779,12 @@ export class EnvironmentService {
       return false;
     }
 
-    const explicitUserCheck = await this.runWslBash(distro, checkScript, 20_000, cliUser);
+    const explicitUserCheck = await this.runWslBash(
+      distro,
+      checkScript,
+      20_000,
+      cliUser,
+    );
     return explicitUserCheck.ok;
   }
 
@@ -2010,7 +2800,9 @@ export class EnvironmentService {
         continue;
       }
 
-      const result = await runCommand(candidate, ["--version"], { env: this.buildCommandEnv() });
+      const result = await runCommand(candidate, ["--version"], {
+        env: this.buildCommandEnv(),
+      });
       if (result.ok) {
         this.resolvedOpenClawCommand = candidate;
         return candidate;
@@ -2020,10 +2812,28 @@ export class EnvironmentService {
     throw new Error("OpenClaw CLI not found. Install OpenClaw first.");
   }
 
+  private async isLocalCommandAvailable(
+    command: string,
+    args: string[],
+  ): Promise<boolean> {
+    const result = await runCommand(command, args, {
+      env: this.buildCommandEnv(),
+      timeoutMs: 15_000,
+      okExitCodes: [0],
+    });
+    return result.ok;
+  }
+
   private getOpenClawCommandCandidates(): string[] {
     const managed = this.getManagedOpenClawPath();
     if (process.platform === "win32") {
-      return [managed, "openclaw.cmd", "openclaw"];
+      return [
+        managed,
+        path.join(this.getManagedNpmPrefix(), "bin", "openclaw.cmd"),
+        path.join(this.getManagedNpmPrefix(), "bin", "openclaw"),
+        "openclaw.cmd",
+        "openclaw",
+      ];
     }
 
     return [managed, "openclaw"];
@@ -2033,7 +2843,7 @@ export class EnvironmentService {
     distro: string,
     command: string,
     timeoutMs: number,
-    user?: string
+    user?: string,
   ): Promise<CommandResult> {
     const scriptPath = await this.writeWslTempScript(distro, command);
     try {
@@ -2044,7 +2854,7 @@ export class EnvironmentService {
       args.push("--", "bash", "-l", scriptPath);
       return await runCommand("wsl.exe", args, {
         timeoutMs,
-        env: this.buildCommandEnv()
+        env: this.buildCommandEnv(),
       });
     } finally {
       this.removeWslTempScript(distro, scriptPath);
@@ -2056,7 +2866,7 @@ export class EnvironmentService {
     command: string,
     onLog: (line: string, stream: "stdout" | "stderr") => void,
     timeoutMs: number,
-    user?: string
+    user?: string,
   ): Promise<CommandResult> {
     const scriptPath = await this.writeWslTempScript(distro, command);
     try {
@@ -2069,41 +2879,54 @@ export class EnvironmentService {
         timeoutMs,
         env: this.buildCommandEnv(),
         onStdout: (chunk) => this.emitChunkLines(chunk, "stdout", onLog),
-        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog)
+        onStderr: (chunk) => this.emitChunkLines(chunk, "stderr", onLog),
       });
     } finally {
       this.removeWslTempScript(distro, scriptPath);
     }
   }
 
-  private async writeWslTempScript(distro: string, command: string): Promise<string> {
+  private async writeWslTempScript(
+    distro: string,
+    command: string,
+  ): Promise<string> {
     const scriptName = `_oc_setup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.sh`;
     const wslPath = `/tmp/${scriptName}`;
     const normalizedCommand = [
       // Some Windows environments leak HOME into WSL as "C:Users<name>".
       // Normalize HOME to the Linux passwd home so auth/config paths resolve
       // consistently (e.g. /home/<user>/.openclaw/...).
-      "if [ -z \"${HOME:-}\" ] || echo \"${HOME}\" | grep -Eq '^[A-Za-z]:'; then HOME=\"$(getent passwd \"$(id -u)\" | cut -d: -f6)\"; fi",
-      "if [ -z \"${HOME:-}\" ]; then HOME=\"/home/$(id -un)\"; fi",
+      'if [ -z "${HOME:-}" ] || echo "${HOME}" | grep -Eq \'^[A-Za-z]:\'; then HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"; fi',
+      'if [ -z "${HOME:-}" ]; then HOME="/home/$(id -un)"; fi',
       "export HOME",
-      command
+      command,
     ].join("; ");
     // Write the script into WSL /tmp via a simple echo. The command content is
     // base64-encoded to avoid any quoting/escaping issues with wsl.exe argument
     // forwarding.
     const encoded = Buffer.from(normalizedCommand, "utf8").toString("base64");
-    await runCommand("wsl.exe", ["-d", distro, "--", "bash", "-c",
-      `echo ${encoded} | base64 -d > ${wslPath} && chmod +x ${wslPath}`], {
-      timeoutMs: 15_000,
-      env: this.buildCommandEnv()
-    });
+    await runCommand(
+      "wsl.exe",
+      [
+        "-d",
+        distro,
+        "--",
+        "bash",
+        "-c",
+        `echo ${encoded} | base64 -d > ${wslPath} && chmod +x ${wslPath}`,
+      ],
+      {
+        timeoutMs: 15_000,
+        env: this.buildCommandEnv(),
+      },
+    );
     return wslPath;
   }
 
   private removeWslTempScript(distro: string, wslPath: string): void {
     runCommand("wsl.exe", ["-d", distro, "--", "rm", "-f", wslPath], {
       timeoutMs: 10_000,
-      env: this.buildCommandEnv()
+      env: this.buildCommandEnv(),
     }).catch(() => {});
   }
 
@@ -2122,6 +2945,22 @@ export class EnvironmentService {
       delete env.Path;
       delete env.PATH;
       env.Path = [prefix, currentPath].filter(Boolean).join(path.delimiter);
+    } else if (process.platform === "darwin") {
+      const currentPath = env.PATH || "";
+      const standardPaths = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+      ];
+      env.PATH = [
+        ...standardPaths,
+        path.join(prefix, "bin"),
+        prefix,
+        currentPath,
+      ]
+        .filter(Boolean)
+        .join(path.delimiter);
     } else {
       const currentPath = env.PATH || "";
       env.PATH = [prefix, currentPath].filter(Boolean).join(path.delimiter);
@@ -2135,7 +2974,8 @@ export class EnvironmentService {
       return path.join(os.homedir(), ".openclaw-desktop", "npm");
     }
 
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const localAppData =
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
     return path.join(localAppData, "OpenClawDesktop", "npm");
   }
 
@@ -2143,7 +2983,7 @@ export class EnvironmentService {
     if (process.platform === "win32") {
       return path.join(this.getManagedNpmPrefix(), "openclaw.cmd");
     }
-    return path.join(this.getManagedNpmPrefix(), "openclaw");
+    return path.join(this.getManagedNpmPrefix(), "bin", "openclaw");
   }
 
   private resolveNodeCommand(): string {
@@ -2157,11 +2997,14 @@ export class EnvironmentService {
   private async ensureMinimumFreeSpace(
     targetPath: string,
     minimumBytes: number,
-    onLog?: (line: string, stream: "stdout" | "stderr") => void
+    onLog?: (line: string, stream: "stdout" | "stderr") => void,
   ): Promise<CommandResult | null> {
     const freeBytes = await this.getAvailableFreeBytes(targetPath);
     if (freeBytes === null) {
-      onLog?.("Disk space pre-check unavailable. Continuing installation.", "stderr");
+      onLog?.(
+        "Disk space pre-check unavailable. Continuing installation.",
+        "stderr",
+      );
       return null;
     }
 
@@ -2171,15 +3014,20 @@ export class EnvironmentService {
         ok: false,
         code: null,
         stdout: "",
-        stderr: `Insufficient disk space on ${driveRoot}. Required ${this.formatBytes(minimumBytes)}, available ${this.formatBytes(freeBytes)}.`
+        stderr: `Insufficient disk space on ${driveRoot}. Required ${this.formatBytes(minimumBytes)}, available ${this.formatBytes(freeBytes)}.`,
       };
     }
 
-    onLog?.(`Disk space check passed on ${driveRoot}: ${this.formatBytes(freeBytes)} free.`, "stdout");
+    onLog?.(
+      `Disk space check passed on ${driveRoot}: ${this.formatBytes(freeBytes)} free.`,
+      "stdout",
+    );
     return null;
   }
 
-  private async getAvailableFreeBytes(targetPath: string): Promise<number | null> {
+  private async getAvailableFreeBytes(
+    targetPath: string,
+  ): Promise<number | null> {
     if (process.platform !== "win32") {
       return null;
     }
@@ -2191,12 +3039,12 @@ export class EnvironmentService {
       "$ErrorActionPreference = 'Stop'",
       `$root = [System.IO.Path]::GetPathRoot(${quotedRoot})`,
       "$drive = New-Object System.IO.DriveInfo($root)",
-      "Write-Output $drive.AvailableFreeSpace"
+      "Write-Output $drive.AvailableFreeSpace",
     ].join("; ");
     const result = await runCommand(
       "powershell.exe",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { timeoutMs: DISK_CHECK_TIMEOUT_MS, env: this.buildCommandEnv() }
+      { timeoutMs: DISK_CHECK_TIMEOUT_MS, env: this.buildCommandEnv() },
     );
 
     if (!result.ok) {
@@ -2222,20 +3070,33 @@ export class EnvironmentService {
     return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
   }
 
-  private composeNodeInstallFailure(wingetResult: CommandResult, msiResult: CommandResult): CommandResult {
-    const wingetDetail = [wingetResult.stderr, wingetResult.stdout].filter(Boolean).join("\n").trim() || "No output.";
-    const msiDetail = [msiResult.stderr, msiResult.stdout].filter(Boolean).join("\n").trim() || "No output.";
+  private composeNodeInstallFailure(
+    wingetResult: CommandResult,
+    msiResult: CommandResult,
+  ): CommandResult {
+    const wingetDetail =
+      [wingetResult.stderr, wingetResult.stdout]
+        .filter(Boolean)
+        .join("\n")
+        .trim() || "No output.";
+    const msiDetail =
+      [msiResult.stderr, msiResult.stdout].filter(Boolean).join("\n").trim() ||
+      "No output.";
     const hint = this.detectInstallFailureHint(`${wingetDetail}\n${msiDetail}`);
     return {
       ok: false,
       code: msiResult.code ?? wingetResult.code,
-      stdout: [wingetResult.stdout, msiResult.stdout].filter(Boolean).join("\n"),
+      stdout: [wingetResult.stdout, msiResult.stdout]
+        .filter(Boolean)
+        .join("\n"),
       stderr: [
         "Node.js installation failed with both methods.",
         `winget attempt:\n${wingetDetail}`,
         `MSI fallback:\n${msiDetail}`,
-        hint
-      ].filter(Boolean).join("\n\n")
+        hint,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     };
   }
 
@@ -2250,7 +3111,11 @@ export class EnvironmentService {
     if (/timed out|timeout/.test(blob)) {
       return "Installer timed out. Check network speed and retry.";
     }
-    if (/network|unable to connect|name resolution|download|tls|certificate/.test(blob)) {
+    if (
+      /network|unable to connect|name resolution|download|tls|certificate/.test(
+        blob,
+      )
+    ) {
       return "Network issue detected. Verify internet access and retry.";
     }
     if (/access is denied|permission|policy|blocked|administrator/.test(blob)) {
@@ -2265,12 +3130,14 @@ export class EnvironmentService {
     }
 
     const programFiles = process.env.ProgramFiles || "C:\\Program Files";
-    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const programFilesX86 =
+      process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const localAppData =
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
     const candidates = [
       path.join(programFiles, "nodejs"),
       path.join(programFilesX86, "nodejs"),
-      path.join(localAppData, "Programs", "nodejs")
+      path.join(localAppData, "Programs", "nodejs"),
     ];
 
     for (const basePath of candidates) {
@@ -2304,10 +3171,13 @@ export class EnvironmentService {
   private emitChunkLines(
     chunk: string,
     stream: "stdout" | "stderr",
-    onLog: (line: string, stream: "stdout" | "stderr") => void
+    onLog: (line: string, stream: "stdout" | "stderr") => void,
   ): void {
     const normalized = chunk.replace(/\r/g, "\n");
-    const lines = normalized.split("\n").map((line) => line.trim()).filter(Boolean);
+    const lines = normalized
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
     for (const line of lines) {
       onLog(line, stream);
     }
@@ -2315,7 +3185,7 @@ export class EnvironmentService {
 
   private parseJsonOutput(stdout: string, stderr: string): unknown {
     const trimmedStdout = stdout.trim();
-    const candidates = [trimmedStdout, ...stdout.split(/\r?\n/).map((line) => line.trim()).reverse()];
+    const candidates: string[] = [];
 
     const braceStart = trimmedStdout.indexOf("{");
     const braceEnd = trimmedStdout.lastIndexOf("}");
@@ -2329,16 +3199,37 @@ export class EnvironmentService {
       candidates.push(trimmedStdout.slice(bracketStart, bracketEnd + 1));
     }
 
+    candidates.push(trimmedStdout);
+    candidates.push(
+      ...stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .reverse(),
+    );
+
+    let scalarCandidate: unknown = undefined;
+
     for (const candidate of candidates) {
       if (!candidate) {
         continue;
       }
 
       try {
-        return JSON.parse(candidate);
+        const parsed = JSON.parse(candidate);
+        if (parsed !== null && typeof parsed === "object") {
+          return parsed;
+        }
+
+        if (scalarCandidate === undefined) {
+          scalarCandidate = parsed;
+        }
       } catch {
         continue;
       }
+    }
+
+    if (scalarCandidate !== undefined) {
+      return scalarCandidate;
     }
 
     const merged = `${stdout}\n${stderr}`.trim();

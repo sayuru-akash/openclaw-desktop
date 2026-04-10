@@ -16,7 +16,13 @@
     "dev:react": "npm run build && cross-env OPENCLAW_UI_EXPERIMENT=react electron .",
     "start": "electron .",
     "test": "npm run build:test && node --test tests/*.test.js",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run dist:win",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg pkg zip --publish never",
+    "dist:all": "npm run build && electron-builder --win --mac dmg pkg zip --publish never",
+    "verify:artifacts": "node scripts/verify-artifacts.mjs --platform=auto",
+    "verify:artifacts:win": "node scripts/verify-artifacts.mjs --platform=win",
+    "verify:artifacts:mac": "node scripts/verify-artifacts.mjs --platform=mac"
   },
   "build": {
     "appId": "ai.openclaw.desktop",
@@ -26,6 +32,7 @@
     },
     "files": [
       "dist/**/*",
+      "assets/branding/openclaw_icon.icns",
       "package.json"
     ],
     "win": {
@@ -38,6 +45,36 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "icon": "assets/branding/openclaw_icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "pkg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "nsis": {
       "installerIcon": "assets/branding/openclaw_icon.ico",

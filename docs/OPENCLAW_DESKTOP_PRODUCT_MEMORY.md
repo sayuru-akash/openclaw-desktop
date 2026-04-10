@@ -4,9 +4,10 @@ Last updated: 2026-02-26
 
 ## 1) Product Goal
 
-Build a Windows-first desktop app (Electron) that makes OpenClaw usable for non-technical users.
+Build a Windows-first desktop app (Electron) that makes OpenClaw usable for non-technical users, with a supported local-flow path on macOS.
 
 The user should:
+
 - install one `.exe`
 - click through guided setup
 - complete onboarding in app UI
@@ -15,11 +16,17 @@ The user should:
 ## 2) Target User
 
 Primary user:
+
 - non-technical Windows user
 - no npm/terminal knowledge
 - no manual JSON config editing
 
+Secondary user:
+
+- macOS user with local Node.js/npm available
+
 Design principle:
+
 - if a step can be automated safely, automate it
 - if manual action is unavoidable, provide one clear instruction and a retry button
 
@@ -28,15 +35,18 @@ Design principle:
 Separate app from OpenClaw repo (no fork required for wrapper flow).
 
 Our app responsibilities:
+
 - Windows prerequisite checks
 - WSL2 + Ubuntu bootstrap (auto-install)
 - Runtime dependency install in WSL (Node.js, npm, Homebrew)
 - OpenClaw install in WSL app-managed prefix
+- macOS/local runtime checks (Node.js/npm) and local OpenClaw install
 - gateway lifecycle (start/stop/status)
 - onboarding wizard UI
 - in-app embedded control experience
 
 OpenClaw responsibilities:
+
 - CLI/runtime behavior
 - gateway service
 - onboarding wizard logic (RPC)
@@ -45,13 +55,18 @@ OpenClaw responsibilities:
 ## 4) Integration Model With OpenClaw
 
 ### 4.1 Commands we run
+
 - `wsl -l -q`
 - `wsl --install -d Ubuntu`
 - `wsl -d Ubuntu -- bash -lc "node --version && npm --version"`
 - `wsl -d Ubuntu -- bash -lc "npm install -g openclaw --prefix ~/.openclaw-desktop/npm --no-fund --no-audit"`
 - `wsl -d Ubuntu -- bash -lc "openclaw gateway start|stop|status"`
+- `node --version`
+- `npm --version`
+- `npm install -g openclaw --prefix ~/.openclaw-desktop/npm --no-fund --no-audit`
 
 ### 4.2 Onboarding method (primary)
+
 - Use Gateway wizard RPC from app UI:
 - `wizard.start`
 - `wizard.next`
@@ -61,6 +76,7 @@ OpenClaw responsibilities:
 TUI onboarding (`openclaw onboard`) is fallback only.
 
 ### 4.3 Control experience
+
 - Embedded inside Electron using local Control UI URL:
 - `http://127.0.0.1:18789/`
 
@@ -75,6 +91,14 @@ No external browser dependency for normal user flow.
 5. App starts gateway and verifies health.
 6. User completes onboarding via in-app wizard UI.
 7. App switches automatically to embedded Chat view.
+
+macOS/local flow:
+
+1. Install app (`.dmg`/`.pkg`).
+2. First launch checks local runtime (Node.js/npm).
+3. If runtime is present, app installs OpenClaw in app-managed npm prefix.
+4. App starts gateway and verifies health.
+5. User completes onboarding via in-app wizard UI.
 
 ## 6) Non-Technical UX Rules
 
@@ -117,6 +141,7 @@ No external browser dependency for normal user flow.
 ## 10) Done vs Next
 
 Implemented:
+
 - WSL-first setup orchestration
 - WSL/Ubuntu bootstrap flow
 - Runtime dependency install in WSL
@@ -126,6 +151,7 @@ Implemented:
 - embedded Control/Chat workspaces with fallback
 
 Next priorities:
+
 1. Improve wizard step UX polish and validation.
 2. Add diagnostics export + support bundle.
 3. Expand Win10/Win11 VM test matrix coverage.
